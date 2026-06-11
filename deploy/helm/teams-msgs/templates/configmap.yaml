@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "teams-msgs.fullname" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "teams-msgs.labels" . | nindent 4 }}
+data:
+  Logging__LogLevel__Default: {{ .Values.logLevel | quote }}
+  AZURE_CLIENT_ID: {{ .Values.workloadIdentity.uamiClientId | quote }}
+  AZURE_TENANT_ID: {{ .Values.azure.tenantId | quote }}
+  Storage__TableServiceUri: {{ .Values.storage.tableServiceUri | quote }}
+  Storage__QueueServiceUri: {{ .Values.storage.queueServiceUri | quote }}
+  Storage__RefsTableName: {{ .Values.storage.refsTableName | quote }}
+  Storage__JobsTableName: {{ .Values.storage.jobsTableName | quote }}
+  Storage__SentMarksTableName: {{ .Values.storage.sentMarksTableName | quote }}
+  Storage__QueueName: {{ .Values.storage.queueName | quote }}
+  Storage__PoisonQueueName: {{ .Values.storage.poisonQueueName | quote }}
+  Storage__MaxDequeueCount: {{ .Values.storage.maxDequeueCount | quote }}
+  Bot__AppId: {{ .Values.bot.appId | quote }}
+  Bot__TenantId: {{ .Values.bot.tenantId | quote }}
+  MicrosoftAppType: "SingleTenant"
+  MicrosoftAppId: {{ .Values.bot.appId | quote }}
+  MicrosoftAppTenantId: {{ .Values.bot.tenantId | quote }}
+  Api__SendFlushConcurrency: {{ .Values.api.sendFlushConcurrency | quote }}
+  Worker__MaxConcurrent: {{ .Values.worker.maxConcurrent | quote }}
+  Worker__PollBatchSize: {{ .Values.worker.pollBatchSize | quote }}
+  Worker__VisibilityTimeout: {{ .Values.worker.visibilityTimeout | quote }}
+  Worker__EmptyQueueBackoff: {{ .Values.worker.emptyQueueBackoff | quote }}
+  Worker__MessageCacheTtl: {{ .Values.worker.messageCacheTtl | quote }}

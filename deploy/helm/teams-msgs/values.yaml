@@ -1,0 +1,87 @@
+nameOverride: ""
+fullnameOverride: ""
+
+namespace: teams-msgs
+
+image:
+  registry: ""
+  repository: ""
+  apiTag: "latest"
+  workerTag: "latest"
+  pullPolicy: IfNotPresent
+
+workloadIdentity:
+  enabled: true
+  uamiClientId: ""
+
+azure:
+  tenantId: ""
+
+storage:
+  tableServiceUri: ""
+  queueServiceUri: ""
+  refsTableName: conversationrefs
+  jobsTableName: jobs
+  sentMarksTableName: sentmarks
+  queueName: send-messages
+  poisonQueueName: send-messages-poison
+  maxDequeueCount: 5
+
+bot:
+  appId: ""
+  appPassword: ""
+  tenantId: ""
+
+api:
+  replicaCount: 1
+  apiKey: ""
+  sendFlushConcurrency: 5
+  service:
+    type: LoadBalancer
+    port: 80
+    targetPort: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCpuUtilizationPercentage: 70
+
+worker:
+  maxConcurrent: 10
+  pollBatchSize: 32
+  visibilityTimeout: "00:05:00"
+  emptyQueueBackoff: "00:00:02"
+  messageCacheTtl: "00:05:00"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  keda:
+    enabled: true
+    pollingInterval: 10
+    cooldownPeriod: 60
+    minReplicaCount: 0
+    maxReplicaCount: 10
+    queueLength: "20"
+    queueLengthDeactivationThreshold: "0"
+  rateLimit:
+    enabled: true
+    maxTokens: 50
+    tokensPerFill: 50
+    fillInterval: 1s
+
+istio:
+  enabled: true
+  injectionLabel: "enabled"
+
+logLevel: Information

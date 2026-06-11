@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "teams-msgs.fullname" . }}-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "teams-msgs.worker.labels" . | nindent 4 }}
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      {{- include "teams-msgs.worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "teams-msgs.worker.selectorLabels" . | nindent 8 }}
+        {{- if .Values.workloadIdentity.enabled }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      serviceAccountName: teams-msgs-worker
+      containers:
+        - name: worker
+          image: {{ include "teams-msgs.worker.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "teams-msgs.fullname" . }}-config
+            - secretRef:
+                name: {{ include "teams-msgs.fullname" . }}-secret
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

@@ -1,0 +1,35 @@
+# Template para o smoke deploy PoC. Copie para values-poc.yaml e preencha
+# com os outputs do Bicep:
+#   az deployment sub show -n <deploymentName> --query properties.outputs
+#
+# Uso:
+#   helm upgrade --install teams-msgs ./deploy/helm/teams-msgs \
+#     --create-namespace -n teams-msgs \
+#     -f deploy/helm/teams-msgs/values.yaml \
+#     -f deploy/helm/teams-msgs/values-poc.yaml
+
+image:
+  registry: ""
+  apiTag: "0.1.0"
+  workerTag: "0.1.0"
+
+workloadIdentity:
+  enabled: true
+  uamiClientId: ""
+
+azure:
+  tenantId: "<seu-tenant-id>"
+
+storage:
+  tableServiceUri: ""
+  queueServiceUri: ""
+
+bot:
+  appId: ""
+  appPassword: ""
+  tenantId: "<seu-tenant-id>"
+
+api:
+  apiKey: "change-me-poc"
+  service:
+    type: LoadBalancer

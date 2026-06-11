@@ -1,0 +1,17 @@
+apiVersion: v2
+name: teams-msgs
+description: Teams Proactive Messaging (.NET 8) — API + Worker on AKS with KEDA scaling
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/EdneiMonteiro/teams_msgs_dotnet
+maintainers:
+  - name: Ednei Monteiro
+    url: https://github.com/EdneiMonteiro
+keywords:
+  - teams
+  - bot-framework
+  - proactive-messaging
+  - aks
+  - keda
+  - istio

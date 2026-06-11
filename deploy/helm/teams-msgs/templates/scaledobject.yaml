@@ -1,0 +1,37 @@
+{{- if .Values.worker.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "teams-msgs.fullname" . }}-worker-auth
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "teams-msgs.worker.labels" . | nindent 4 }}
+spec:
+  podIdentity:
+    provider: azure-workload
+    identityId: {{ .Values.workloadIdentity.uamiClientId | quote }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "teams-msgs.fullname" . }}-worker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "teams-msgs.worker.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "teams-msgs.fullname" . }}-worker
+  pollingInterval: {{ .Values.worker.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.worker.keda.cooldownPeriod }}
+  minReplicaCount: {{ .Values.worker.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.worker.keda.maxReplicaCount }}
+  triggers:
+    - type: azure-queue
+      authenticationRef:
+        name: {{ include "teams-msgs.fullname" . }}-worker-auth
+      metadata:
+        queueName: {{ .Values.storage.queueName | quote }}
+        accountName: {{ regexReplaceAll "https://([^.]+)\\..*" .Values.storage.queueServiceUri "${1}" | quote }}
+        queueLength: {{ .Values.worker.keda.queueLength | quote }}
+        activationQueueLength: {{ .Values.worker.keda.queueLengthDeactivationThreshold | quote }}
+{{- end }}
