@@ -1,0 +1,15 @@
+{
+  "name": "teams-msgs-dotnet-load-test",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "load": "node run-50k.js",
+    "cleanup": "node run-50k.js --cleanup"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.3.2",
+    "@azure/identity": "^4.5.0"
+  }
+}
+
