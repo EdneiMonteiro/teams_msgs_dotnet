@@ -33,6 +33,10 @@ bld/
 *.local.json
 appsettings.Development.json
 appsettings.Local.json
+deploy/helm/teams-msgs/values-poc.yaml
+deploy/helm/**/values-*.yaml
+!deploy/helm/**/values-poc.yaml.template
+!deploy/helm/**/values.yaml
 
 # Docker
 *.dockerignore.local

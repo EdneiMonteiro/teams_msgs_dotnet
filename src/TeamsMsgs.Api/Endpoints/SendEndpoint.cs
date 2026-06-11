@@ -28,7 +28,7 @@ public static class SendEndpoint
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        app.MapPost("/api/send", HandleAsync);
+        app.MapPost("/send", HandleAsync);
 
         return app;
     }

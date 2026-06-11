@@ -14,7 +14,7 @@ public static class JobsEndpoint
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        app.MapGet("/api/jobs/{id}", async (string id, IJobTracker jobs, CancellationToken ct) =>
+        app.MapGet("/jobs/{id}", async (string id, IJobTracker jobs, CancellationToken ct) =>
         {
             var job = await jobs.GetAsync(id, ct).ConfigureAwait(false);
             return job is null
@@ -22,7 +22,7 @@ public static class JobsEndpoint
                 : Results.Ok(job);
         });
 
-        app.MapGet("/api/status", async (
+        app.MapGet("/status", async (
             IConversationRefStore refs,
             IOptions<StorageOptions> storageOptions,
             CancellationToken ct) =>

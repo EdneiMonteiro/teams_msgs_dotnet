@@ -29,10 +29,10 @@ RUN dotnet publish src/TeamsMsgs.Worker/TeamsMsgs.Worker.csproj \
 FROM ${RUNTIME_IMAGE} AS final
 WORKDIR /app
 
-RUN addgroup -S app && adduser -S app -G app
-USER app
+RUN addgroup -S appsvc && adduser -S appsvc -G appsvc
+USER appsvc
 
 ENV DOTNET_RUNNING_IN_CONTAINER=true
 
-COPY --from=build --chown=app:app /app/publish .
+COPY --from=build --chown=appsvc:appsvc /app/publish .
 ENTRYPOINT ["dotnet", "TeamsMsgs.Worker.dll"]

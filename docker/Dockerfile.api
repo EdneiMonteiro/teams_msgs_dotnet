@@ -29,9 +29,9 @@ RUN dotnet publish src/TeamsMsgs.Api/TeamsMsgs.Api.csproj \
 FROM ${RUNTIME_IMAGE} AS final
 WORKDIR /app
 
-RUN addgroup -S app && adduser -S app -G app \
+RUN addgroup -S appsvc && adduser -S appsvc -G appsvc \
     && apk add --no-cache wget
-USER app
+USER appsvc
 
 ENV ASPNETCORE_URLS=http://+:8080 \
     DOTNET_RUNNING_IN_CONTAINER=true \
@@ -41,5 +41,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD wget -qO- http://localhost:8080/healthz || exit 1
 
-COPY --from=build --chown=app:app /app/publish .
+COPY --from=build --chown=appsvc:appsvc /app/publish .
 ENTRYPOINT ["dotnet", "TeamsMsgs.Api.dll"]
