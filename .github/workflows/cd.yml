@@ -1,0 +1,119 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'docker/**'
+      - 'deploy/helm/**'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag override (defaults to short SHA)'
+        required: false
+
+permissions:
+  contents: read
+  id-token: write     # OIDC to Azure
+
+env:
+  AZ_SUBSCRIPTION: <seu-subscription-id>
+  AZ_RG: rg-tmd-poc
+  AZ_ACR: ""          # configurar via AZ_ACR repo variable
+  AZ_AKS: aks-tmd-poc
+  HELM_NAMESPACE: teams-msgs
+  HELM_RELEASE: teams-msgs
+
+jobs:
+  build-push:
+    name: Build & Push images to ACR
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZ_SUBSCRIPTION }}
+
+      - name: Discover ACR name (if not set)
+        id: acr
+        run: |
+          ACR="${{ vars.AZ_ACR }}"
+          if [ -z "$ACR" ]; then
+            ACR=$(az acr list -g $AZ_RG --query "[0].name" -o tsv)
+          fi
+          echo "name=$ACR" >> $GITHUB_OUTPUT
+
+      - name: ACR build (API)
+        run: |
+          az acr build \
+            --registry ${{ steps.acr.outputs.name }} \
+            --image api:${{ steps.tag.outputs.tag }} \
+            --image api:latest \
+            --file docker/Dockerfile.api \
+            .
+
+      - name: ACR build (Worker)
+        run: |
+          az acr build \
+            --registry ${{ steps.acr.outputs.name }} \
+            --image worker:${{ steps.tag.outputs.tag }} \
+            --image worker:latest \
+            --file docker/Dockerfile.worker \
+            .
+
+  helm-upgrade:
+    name: Helm upgrade in AKS
+    runs-on: ubuntu-latest
+    needs: build-push
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZ_SUBSCRIPTION }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials -g $AZ_RG -n $AZ_AKS --overwrite-existing
+
+      - uses: azure/setup-helm@v4
+
+      - name: Resolve image registry
+        id: acr
+        run: |
+          ACR="${{ vars.AZ_ACR }}"
+          if [ -z "$ACR" ]; then
+            ACR=$(az acr list -g $AZ_RG --query "[0].name" -o tsv)
+          fi
+          echo "registry=${ACR}.azurecr.io" >> $GITHUB_OUTPUT
+
+      - name: Helm upgrade
+        run: |
+          helm upgrade --install $HELM_RELEASE deploy/helm/teams-msgs \
+            --create-namespace -n $HELM_NAMESPACE \
+            -f deploy/helm/teams-msgs/values.yaml \
+            -f deploy/helm/teams-msgs/values-poc.yaml \
+            --set image.registry=${{ steps.acr.outputs.registry }} \
+            --set image.apiTag=${{ needs.build-push.outputs.tag }} \
+            --set image.workerTag=${{ needs.build-push.outputs.tag }} \
+            --wait --timeout 5m
