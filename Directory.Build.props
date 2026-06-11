@@ -8,5 +8,15 @@
     <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
     <AnalysisMode>Recommended</AnalysisMode>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!--
+      Suprimir regras pedantes que não agregam para PoC:
+      CA1716 — "Shared"/"Error" conflitam com keywords VB (não usamos VB)
+      CA1711 — sufixo "Queue" em tipos (domínio justifica)
+      CA1848 — LoggerMessage delegates (otimização premature p/ caminhos não-quentes)
+      CA1861 — array literal em chamada (clareza > micro-otimização)
+      CA5351 — MD5 (uso não-criptográfico como hash curto para rowKey)
+      CA1812 — classes nunca instanciadas (DI containers cuidam disso)
+    -->
+    <NoWarn>$(NoWarn);CA1716;CA1711;CA1848;CA1861;CA5351;CA1812</NoWarn>
   </PropertyGroup>
 </Project>
