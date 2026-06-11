@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: teams-msgs-gw-tls
+  namespace: aks-istio-ingress
+spec:
+  secretName: teams-msgs-gw-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - teams-msgs-dotnet.brazilsouth.cloudapp.azure.com

@@ -37,7 +37,7 @@ api:
   apiKey: ""
   sendFlushConcurrency: 5
   service:
-    type: LoadBalancer
+    type: ClusterIP        # PoC com Istio Gateway p/ ingress; trocar p/ LoadBalancer se sem mesh
     port: 80
     targetPort: 8080
   resources:
