@@ -23,6 +23,7 @@ app.MapGroup("/api")
     .MapSendEndpoint()
     .MapJobsEndpoint();
 
-app.Logger.LogInformation("🤖 Teams Proactive Messaging API (.NET 8) listening");
+app.Logger.LogInformation("Teams Proactive Messaging API (.NET 8) listening");
 
 app.Run();
+

@@ -31,7 +31,9 @@ builder.Services.AddSingleton<IRefStore, ConversationRefStoreAdapter>();
 
 builder.Services.AddSingleton<BotFrameworkAuthentication>(_ =>
     new ConfigurationBotFrameworkAuthentication(builder.Configuration));
-builder.Services.AddSingleton<CloudAdapter>();
+builder.Services.AddSingleton<CloudAdapter>(sp => new CloudAdapter(
+    sp.GetRequiredService<BotFrameworkAuthentication>(),
+    sp.GetRequiredService<ILogger<CloudAdapter>>()));
 builder.Services.AddTransient<IBot, ProactiveBot>();
 
 builder.Services.AddHostedService<QueueConsumerService>();

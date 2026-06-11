@@ -19,9 +19,10 @@ public static class BotRegistration
         services.AddSingleton<BotFrameworkAuthentication>(_ =>
             new ConfigurationBotFrameworkAuthentication(configuration));
 
-        services.AddSingleton<IBotFrameworkHttpAdapter, CloudAdapter>();
-        services.AddSingleton<CloudAdapter>(sp =>
-            (CloudAdapter)sp.GetRequiredService<IBotFrameworkHttpAdapter>());
+        services.AddSingleton<CloudAdapter>(sp => new CloudAdapter(
+            sp.GetRequiredService<BotFrameworkAuthentication>(),
+            sp.GetRequiredService<ILogger<CloudAdapter>>()));
+        services.AddSingleton<IBotFrameworkHttpAdapter>(sp => sp.GetRequiredService<CloudAdapter>());
 
         services.AddTransient<IBot, TeamsMsgs.Shared.Bot.ProactiveBot>();
 
