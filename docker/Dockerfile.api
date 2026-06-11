@@ -1,0 +1,45 @@
+# Copyright (c) 2026 Ednei Monteiro. Licensed under the MIT License.
+# See LICENSE and DISCLAIMER.md in the project root for details.
+
+# syntax=docker/dockerfile:1.7
+
+ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:8.0-alpine
+ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+
+FROM ${SDK_IMAGE} AS build
+WORKDIR /src
+
+COPY Directory.Build.props Directory.Packages.props ./
+COPY TeamsMsgs.sln ./
+COPY src/TeamsMsgs.Shared/TeamsMsgs.Shared.csproj  src/TeamsMsgs.Shared/
+COPY src/TeamsMsgs.Api/TeamsMsgs.Api.csproj        src/TeamsMsgs.Api/
+COPY src/TeamsMsgs.Worker/TeamsMsgs.Worker.csproj  src/TeamsMsgs.Worker/
+COPY tests/TeamsMsgs.Tests/TeamsMsgs.Tests.csproj  tests/TeamsMsgs.Tests/
+RUN dotnet restore src/TeamsMsgs.Api/TeamsMsgs.Api.csproj
+
+COPY src/TeamsMsgs.Shared/ src/TeamsMsgs.Shared/
+COPY src/TeamsMsgs.Api/    src/TeamsMsgs.Api/
+
+RUN dotnet publish src/TeamsMsgs.Api/TeamsMsgs.Api.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore \
+    /p:UseAppHost=false
+
+FROM ${RUNTIME_IMAGE} AS final
+WORKDIR /app
+
+RUN addgroup -S app && adduser -S app -G app \
+    && apk add --no-cache wget
+USER app
+
+ENV ASPNETCORE_URLS=http://+:8080 \
+    DOTNET_RUNNING_IN_CONTAINER=true \
+    DOTNET_USE_POLLING_FILE_WATCHER=true
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -qO- http://localhost:8080/healthz || exit 1
+
+COPY --from=build --chown=app:app /app/publish .
+ENTRYPOINT ["dotnet", "TeamsMsgs.Api.dll"]

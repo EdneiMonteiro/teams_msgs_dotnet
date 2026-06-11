@@ -1,0 +1,38 @@
+# Copyright (c) 2026 Ednei Monteiro. Licensed under the MIT License.
+# See LICENSE and DISCLAIMER.md in the project root for details.
+
+# syntax=docker/dockerfile:1.7
+
+ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:8.0-alpine
+ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/runtime:8.0-alpine
+
+FROM ${SDK_IMAGE} AS build
+WORKDIR /src
+
+COPY Directory.Build.props Directory.Packages.props ./
+COPY TeamsMsgs.sln ./
+COPY src/TeamsMsgs.Shared/TeamsMsgs.Shared.csproj  src/TeamsMsgs.Shared/
+COPY src/TeamsMsgs.Api/TeamsMsgs.Api.csproj        src/TeamsMsgs.Api/
+COPY src/TeamsMsgs.Worker/TeamsMsgs.Worker.csproj  src/TeamsMsgs.Worker/
+COPY tests/TeamsMsgs.Tests/TeamsMsgs.Tests.csproj  tests/TeamsMsgs.Tests/
+RUN dotnet restore src/TeamsMsgs.Worker/TeamsMsgs.Worker.csproj
+
+COPY src/TeamsMsgs.Shared/ src/TeamsMsgs.Shared/
+COPY src/TeamsMsgs.Worker/ src/TeamsMsgs.Worker/
+
+RUN dotnet publish src/TeamsMsgs.Worker/TeamsMsgs.Worker.csproj \
+    -c Release \
+    -o /app/publish \
+    --no-restore \
+    /p:UseAppHost=false
+
+FROM ${RUNTIME_IMAGE} AS final
+WORKDIR /app
+
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+
+COPY --from=build --chown=app:app /app/publish .
+ENTRYPOINT ["dotnet", "TeamsMsgs.Worker.dll"]
