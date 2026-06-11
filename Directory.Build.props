@@ -17,6 +17,6 @@
       CA5351 — MD5 (uso não-criptográfico como hash curto para rowKey)
       CA1812 — classes nunca instanciadas (DI containers cuidam disso)
     -->
-    <NoWarn>$(NoWarn);CA1716;CA1711;CA1848;CA1861;CA5351;CA1812;CA1859</NoWarn>
+    <NoWarn>$(NoWarn);CA1716;CA1711;CA1848;CA1861;CA5351;CA1812;CA1859;CA1707</NoWarn>
   </PropertyGroup>
 </Project>
