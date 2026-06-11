@@ -149,6 +149,15 @@ module fedWorker 'modules/federation.bicep' = {
   }
 }
 
+module fedKeda 'modules/federation-keda.bicep' = {
+  name: 'fed-keda'
+  scope: rg
+  params: {
+    identityName: identity.outputs.name
+    oidcIssuerUrl: aks.outputs.oidcIssuerUrl
+  }
+}
+
 module bot 'modules/bot.bicep' = if (!empty(botMsaAppId)) {
   name: 'bot'
   scope: rg

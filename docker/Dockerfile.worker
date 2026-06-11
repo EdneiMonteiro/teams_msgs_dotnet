@@ -4,7 +4,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:8.0-alpine
-ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/runtime:8.0-alpine
+ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet:8.0-alpine
 
 FROM ${SDK_IMAGE} AS build
 WORKDIR /src
