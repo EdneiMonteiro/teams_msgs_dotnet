@@ -1,0 +1,52 @@
+# .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+*.swp
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Rider
+.idea/
+
+# Env / secrets
+.env
+.env.local
+*.local.json
+appsettings.Development.json
+appsettings.Local.json
+
+# Docker
+*.dockerignore.local
+
+# Bicep / Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+*.bicepparam.local
+
+# Helm
+deploy/helm/**/charts/
+deploy/helm/**/Chart.lock
+
+# OS
+.DS_Store
+Thumbs.db

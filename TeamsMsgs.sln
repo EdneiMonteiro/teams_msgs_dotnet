@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{78FEA494-E7D6-4967-8668-A9A091CD547D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeamsMsgs.Api", "src\TeamsMsgs.Api\TeamsMsgs.Api.csproj", "{299FD93F-E55C-4257-8F92-0950C3CCB39E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeamsMsgs.Worker", "src\TeamsMsgs.Worker\TeamsMsgs.Worker.csproj", "{A31D7C1E-DD6B-4A86-8C61-6FD4CE3226EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeamsMsgs.Shared", "src\TeamsMsgs.Shared\TeamsMsgs.Shared.csproj", "{C769F4C5-2F4E-42A2-9407-E2C330EC672D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{573FC714-2515-4DC9-A130-3066945C3632}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeamsMsgs.Tests", "tests\TeamsMsgs.Tests\TeamsMsgs.Tests.csproj", "{28C53181-386C-48EF-B3B6-57F10C4697B1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{299FD93F-E55C-4257-8F92-0950C3CCB39E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{299FD93F-E55C-4257-8F92-0950C3CCB39E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{299FD93F-E55C-4257-8F92-0950C3CCB39E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{299FD93F-E55C-4257-8F92-0950C3CCB39E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A31D7C1E-DD6B-4A86-8C61-6FD4CE3226EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A31D7C1E-DD6B-4A86-8C61-6FD4CE3226EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A31D7C1E-DD6B-4A86-8C61-6FD4CE3226EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A31D7C1E-DD6B-4A86-8C61-6FD4CE3226EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C769F4C5-2F4E-42A2-9407-E2C330EC672D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C769F4C5-2F4E-42A2-9407-E2C330EC672D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C769F4C5-2F4E-42A2-9407-E2C330EC672D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C769F4C5-2F4E-42A2-9407-E2C330EC672D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{28C53181-386C-48EF-B3B6-57F10C4697B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{28C53181-386C-48EF-B3B6-57F10C4697B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{28C53181-386C-48EF-B3B6-57F10C4697B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{28C53181-386C-48EF-B3B6-57F10C4697B1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{299FD93F-E55C-4257-8F92-0950C3CCB39E} = {78FEA494-E7D6-4967-8668-A9A091CD547D}
+		{A31D7C1E-DD6B-4A86-8C61-6FD4CE3226EA} = {78FEA494-E7D6-4967-8668-A9A091CD547D}
+		{C769F4C5-2F4E-42A2-9407-E2C330EC672D} = {78FEA494-E7D6-4967-8668-A9A091CD547D}
+		{28C53181-386C-48EF-B3B6-57F10C4697B1} = {573FC714-2515-4DC9-A130-3066945C3632}
+	EndGlobalSection
+EndGlobal
