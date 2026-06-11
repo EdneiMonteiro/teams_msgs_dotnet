@@ -1,9 +1,17 @@
 cff-version: 1.2.0
 message: "Se usar este material, por favor cite."
-title: "Teams Proactive Messaging"
+title: "Teams Proactive Messaging — .NET 8 / AKS / Storage Queue"
 type: software
 authors:
   - given-names: Ednei
     family-names: Monteiro
     orcid: "https://orcid.org/0009-0006-0765-4201"
-url: "https://github.com/EdneiMonteiro/teams_msgs"
+url: "https://github.com/EdneiMonteiro/teams_msgs_dotnet"
+references:
+  - type: software
+    title: "Teams Proactive Messaging (versão TypeScript / ACA / Service Bus / Redis)"
+    authors:
+      - given-names: Ednei
+        family-names: Monteiro
+        orcid: "https://orcid.org/0009-0006-0765-4201"
+    url: "https://github.com/EdneiMonteiro/teams_msgs"
