@@ -1,0 +1,3 @@
+# Pacote do Teams App gerado pelo build (mantido fora do git).
+*.zip
+manifest.local.json
