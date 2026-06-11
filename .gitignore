@@ -54,3 +54,7 @@ deploy/helm/**/Chart.lock
 # OS
 .DS_Store
 Thumbs.db
+
+deploy/rendered.yaml
+deploy/akscmd/
+
