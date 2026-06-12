@@ -283,7 +283,7 @@ sequenceDiagram
                 Worker->>Jobs: IncrementFailedAsync
                 Worker->>SQ: DeleteMessage
             else 429/5xx
-                Note over Worker: backoff/retry interno; depois redelivery
+                Note over Worker: backoff e retry interno
             end
         end
     end
