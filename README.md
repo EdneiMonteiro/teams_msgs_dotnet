@@ -82,7 +82,6 @@ Mesma lógica, componentes Azure diferentes:
 - [Deploy em Azure](#deploy-em-azure)
 - [Deploy do Teams App](#deploy-do-teams-app)
 - [Load test](#load-test)
-- [Custos](#custos)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -611,7 +610,6 @@ teams_msgs_dotnet/
 ├── docs/
 │   ├── architecture.md
 │   ├── deploy.md
-│   ├── costs.md
 │   └── troubleshooting.md
 ├── TeamsMsgs.sln
 ├── Directory.Build.props             # net8.0, nullable, NoWarn pedantes
@@ -773,30 +771,6 @@ Resultado de referência validado neste cluster:
 - **201 msgs em 35s** com 1 worker pod = **354 msg/min**
 - KEDA escalou 0→1 em ~6s
 - Throughput projetado para 50k msgs com 10 workers: **~15min** (~3500 msg/min agregado)
-
----
-
-## Custos
-
-Tabela completa em [`docs/costs.md`](./docs/costs.md). Resumo:
-
-| Item | USD/dia |
-|---|---:|
-| 2× `Standard_D2s_v5` Linux (AKS nodes) | 7,20 |
-| 2× OS Disk Premium SSD P10 | 1,31 |
-| 1× Public IP Standard (Istio Gateway LB) | 0,12 |
-| Standard LB rules | 0,60 |
-| ACR Basic ($5/mês) | 0,17 |
-| Storage Account (tabelas + queues vazias) | <0,01 |
-| Log Analytics (cap 25 MB/dia → free tier) | 0 |
-| AKS control plane (Free tier), UAMI, NSG, VNet, Bot F0 | 0 |
-| **Total** | **≈ 9,40** |
-
-Para parar o billing imediatamente:
-```bash
-az group delete -n rg-tmd-poc --yes --no-wait
-az ad app delete --id <APP_ID>
-```
 
 ---
 

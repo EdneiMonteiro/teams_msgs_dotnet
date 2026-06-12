@@ -16,18 +16,6 @@ Ele pode não atender requisitos essenciais de um ambiente produtivo, como:
 - Performance
 - Conformidade regulatória
 
-## Trade-offs específicos desta PoC (.NET / AKS / Storage Queue)
-
-Foram feitas escolhas explicitamente PoC-friendly que **não** devem ser replicadas sem revisão em produção:
-
-- `Storage Queue` em vez de `Service Bus`: limite de **64 KB por mensagem** (AdaptiveCards grandes não cabem). Sem dedup nativa — supressão de duplicação foi implementada na aplicação (`sentmarks`). Sem DLQ nativa — `send-messages-poison` é manual após `DequeueCount > 5`.
-- `Table Storage` no lugar de `Redis` para contadores: atualizações atômicas via `ETag`/`If-Match` + retry exponencial (`Polly`). Sob alta concorrência (>500 increments concorrentes no mesmo `jobId`), o tempo de resposta cresce.
-- `Istio EnvoyFilter local_ratelimit` no lugar do token bucket Lua do Redis: limite é **por pod**, não global cross-pod.
-- AKS com SKU Base/Free no control plane e `Standard_D2s_v5` em 2 nodes: sem HA real, sem multi-AZ.
-- Ingress via `LoadBalancer` exposto publicamente sem WAF/DDoS premium.
-
-Para uso real, revise cada um desses pontos.
-
 ## Sem Garantias
 
 TODO O CÓDIGO É FORNECIDO **"NO ESTADO EM QUE SE ENCONTRA"**, SEM GARANTIAS DE QUALQUER TIPO, EXPRESSAS OU IMPLÍCITAS, INCLUINDO, MAS NÃO SE LIMITANDO A:
