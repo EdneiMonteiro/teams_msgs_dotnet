@@ -61,7 +61,7 @@ A SA do KEDA operator (`system:serviceaccount:kube-system:keda-operator`) precis
 
 Verifique também:
 - SA do pod anotado com `azure.workload.identity/client-id: <UAMI_CLIENT_ID>`
-- Pod labelado com `azure.workload.identity/use: "true"`
+- Pod marcado com o rótulo `azure.workload.identity/use: "true"`
 
 ### `403 do meu user via az storage` mesmo sendo Owner da subscription
 
@@ -79,7 +79,7 @@ timeouts:
   backendRequest: 600s
 ```
 
-Pattern de produção: refatore o fan-out para `BackgroundService` + `Channel<T>` e retorne 202 imediato. A API só registra o job e enfileira em background.
+Padrão de produção: refatore o fan-out para `BackgroundService` + `Channel<T>` e retorne 202 imediatamente. A API só registra o job e enfileira as mensagens em segundo plano.
 
 ### Cert-manager não cria `Certificate` a partir da annotation `cert-manager.io/cluster-issuer` no `Gateway`
 
@@ -110,7 +110,7 @@ kubectl -n kube-system logs deployment/keda-operator --tail=50
 
 Sintoma na PoC: 10 workers processando 30k+ msgs com `BadRequest` tiveram 3-4 restarts em 15min. Causas prováveis: OOM (limit padrão 512 MiB) e/ou exception não tratada no caminho do `ContinueConversationAsync` para refs inválidas.
 
-Mitigações: bumpar `worker.resources.limits.memory` para `1Gi` no `values.yaml` e revisar logs para classificar a exception.
+Mitigações: aumentar `worker.resources.limits.memory` para `1Gi` no `values.yaml` e revisar logs para classificar a exceção.
 
 ### Mensagens não somem da fila apesar do worker rodar
 
@@ -125,7 +125,7 @@ az storage message peek -q send-messages-poison --account-name <sa> --auth-mode 
 
 ### Log Analytics em `OverQuota`
 
-Capacidade atingida do daily cap (configuramos 25 MB/dia no `log-tmd-poc`). Reset diário às 09:00 UTC. Para subir:
+Capacidade atingida do limite diário (configuramos 25 MB/dia em `log-tmd-poc`). Reinício diário às 09:00 UTC. Para aumentar:
 
 ```bash
 az monitor log-analytics workspace update -g rg-tmd-poc -n log-tmd-poc --quota 1

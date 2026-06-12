@@ -390,7 +390,7 @@ HTTP/1.1 202 Accepted
 
 > ⚠️ **`repeat` multiplica `refs × repeat`** mensagens reais para o Bot Framework. Use com cuidado em produção — útil principalmente para load testing.
 >
-> O `202 Accepted` é retornado **depois** que a API termina o streaming das refs e enfileira as mensagens. O HTTPRoute do Istio Gateway tem `timeouts.request: 600s` para suportar fan-outs grandes; ainda assim, o pattern de produção recomendado é mover o fan-out para um `BackgroundService` + `Channel<T>` e retornar 202 imediato.
+> O `202 Accepted` é retornado **depois** que a API termina o streaming das referências e enfileira as mensagens. O HTTPRoute do Istio Gateway tem `timeouts.request: 600s` para suportar fan-outs grandes; ainda assim, o padrão de produção recomendado é mover o fan-out para um `BackgroundService` + `Channel<T>` e retornar 202 imediatamente.
 
 ### `GET /api/jobs/{id}`
 
@@ -510,7 +510,7 @@ await pipeline.ExecuteAsync(async token => {
 
 `UpdateEntityAsync` com `entity.ETag` envia `If-Match: <etag>`. Se outro worker já atualizou (etag mudou), retorna `412 Precondition Failed` → Polly faz retry com backoff exponencial + jitter.
 
-**Limitação conhecida**: sob alta concorrência (>500 increments concorrentes no mesmo `jobId`), o retry rate cresce e o tempo de resposta degrada. Para um job de 50k msgs com 10 workers, observamos contenção administrável; para >100k considere particionar jobs ou usar Cosmos DB com PATCH atomic.
+**Limitação conhecida**: sob alta concorrência (mais de 500 incrementos simultâneos no mesmo `jobId`), a taxa de retentativas cresce e o tempo de resposta degrada. Para um job de 50 mil mensagens com 10 workers a contenção é administrável; acima de 100 mil considere particionar jobs ou usar Cosmos DB com PATCH atômico.
 
 ---
 
@@ -602,7 +602,7 @@ teams_msgs_dotnet/
 │   ├── build.ps1                     # gera build/teams-msgs-dotnet-app.zip
 │   └── build/                        # .zip ignorado pelo git
 ├── load_test/
-│   ├── run-50k.js                    # seed fake refs + 1 job + cleanup
+│   ├── run-50k.js                    # insere refs fictícias + 1 job + limpeza
 │   └── package.json
 ├── .github/workflows/
 │   ├── ci.yml                        # build+test+lint (PR)
@@ -739,7 +739,7 @@ az bot update -g rg-tmd-poc -n bot-tmd-poc \
 
 ## Deploy do Teams App
 
-1. Gere o pacote: `pwsh ./manifest/build.ps1 -AppId <APP_ID> -Fqdn <FQDN>` → cria `manifest/build/teams-msgs-dotnet-app.zip` (gitignored).
+1. Gere o pacote: `pwsh ./manifest/build.ps1 -AppId <APP_ID> -Fqdn <FQDN>` → cria `manifest/build/teams-msgs-dotnet-app.zip` (ignorado pelo `.gitignore`).
 2. Suba em **Teams Admin Center → Manage apps → Upload custom app**.
 3. **Setup policies → Global → Installed apps → Add apps** (org-wide).
 4. Propagação org-wide leva 24–48h. Para testes imediatos, instale manualmente em **Apps → Built for your org**.
@@ -759,18 +759,18 @@ node run-50k.js --refs 5000           # parâmetros válidos: --refs N, --skip-s
 ```
 
 O script:
-1. Seeda `N` refs **fake** na `conversationrefs` (clonando 1 ref real, com `conversationId` falso → BadRequest no envio real, esperado)
+1. Insere `N` referências **fictícias** na tabela `conversationrefs` (clonando 1 referência real, com `conversationId` falso → o envio real retorna `BadRequest`, esperado)
 2. Dispara `POST /api/send`
-3. Pollua `/api/jobs/{id}` a cada 2s até `completed`
-4. Gera `load_test/report.json` com throughput e tempos
-5. Faz cleanup das fake refs
+3. Consulta `/api/jobs/{id}` a cada 2 s até `completed`
+4. Gera `load_test/report.json` com vazão e tempos
+5. Remove as referências fictícias ao final
 
-> Para receber **N msgs reais** no seu Teams (em vez de testar pipeline), use `repeat: N` no `POST /api/send` em vez do load test.
+> Para receber **N mensagens reais** no seu Teams (em vez de testar o pipeline), use `repeat: N` no `POST /api/send` em vez do teste de carga.
 
 Resultado de referência validado neste cluster:
-- **201 msgs em 35s** com 1 worker pod = **354 msg/min**
-- KEDA escalou 0→1 em ~6s
-- Throughput projetado para 50k msgs com 10 workers: **~15min** (~3500 msg/min agregado)
+- **201 mensagens em 35 s** com 1 pod de worker = **354 msg/min**
+- KEDA escalou de 0 para 1 réplica em ~6 s
+- Vazão projetada para 50 mil mensagens com 10 workers: **~15 min** (~3500 msg/min agregado)
 
 ---
 
