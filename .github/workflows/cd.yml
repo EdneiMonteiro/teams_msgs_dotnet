@@ -19,10 +19,10 @@ permissions:
   id-token: write     # OIDC to Azure
 
 env:
-  AZ_SUBSCRIPTION: <seu-subscription-id>
-  AZ_RG: rg-tmd-poc
-  AZ_ACR: ""          # configurar via AZ_ACR repo variable
-  AZ_AKS: aks-tmd-poc
+  AZ_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZ_RG: ${{ vars.AZ_RG }}              # configurar via AZ_RG repo variable
+  AZ_ACR: ${{ vars.AZ_ACR }}            # configurar via AZ_ACR repo variable
+  AZ_AKS: ${{ vars.AZ_AKS }}            # configurar via AZ_AKS repo variable
   HELM_NAMESPACE: teams-msgs
   HELM_RELEASE: teams-msgs
 

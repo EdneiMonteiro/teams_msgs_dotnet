@@ -10,7 +10,7 @@ graph LR
     Users[👥 Usuários do Teams]
     BF[Bot Framework]
 
-    subgraph "AKS Cluster: aks-tmd-poc"
+    subgraph "AKS Cluster: aks-<seu-cluster>"
         subgraph "Namespace aks-istio-ingress"
             Gateway[Istio Gateway<br/>Public LB<br/>HTTP→443 TLS]
         end
@@ -141,7 +141,7 @@ configPatches:
 
 ### Observabilidade
 
-- **Container Insights** (Log Analytics workspace `log-tmd-poc`) coleta stdout/stderr de todos os pods e métricas do nó.
+- **Container Insights** (Log Analytics workspace `log-<seu-workspace>`) coleta stdout/stderr de todos os pods e métricas do nó.
 - **Daily cap 25 MB** configurado para conter custo durante PoC. Status visível em `workspaceCapping.dataIngestionStatus`.
 - **KEDA operator logs** em `kube-system/keda-operator` mostram quando o azure-queue scaler consegue ou não pegar queue length.
 

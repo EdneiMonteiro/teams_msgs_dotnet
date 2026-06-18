@@ -48,9 +48,9 @@ Outputs relevantes (`az deployment sub show -n <name> --query properties.outputs
 ## 3. Habilitar Istio managed ingress gateway
 
 ```bash
-az aks mesh enable-ingress-gateway -g rg-tmd-poc -n aks-tmd-poc \
+az aks mesh enable-ingress-gateway -g rg-<seu-rg> -n aks-<seu-cluster> \
   --ingress-gateway-type external
-az aks get-credentials -g rg-tmd-poc -n aks-tmd-poc
+az aks get-credentials -g rg-<seu-rg> -n aks-<seu-cluster>
 ```
 
 ## 4. Instalar Gateway API CRDs e cert-manager
@@ -69,7 +69,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 ## 5. Atribuir DNS label ao Public IP do Istio Gateway
 
 ```bash
-MC_RG=$(az aks show -g rg-tmd-poc -n aks-tmd-poc --query nodeResourceGroup -o tsv)
+MC_RG=$(az aks show -g rg-<seu-rg> -n aks-<seu-cluster> --query nodeResourceGroup -o tsv)
 ISTIO_IP=$(kubectl -n aks-istio-ingress get svc \
   aks-istio-ingressgateway-external -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 PIP_NAME=$(az network public-ip list -g $MC_RG \
@@ -92,7 +92,7 @@ kubectl -n aks-istio-ingress get certificate teams-msgs-gw-tls
 ## 7. Build & push das imagens (ACR)
 
 ```bash
-ACR=$(az acr list -g rg-tmd-poc --query "[0].name" -o tsv)
+ACR=$(az acr list -g rg-<seu-rg> --query "[0].name" -o tsv)
 az acr build --registry "$ACR" \
   --image api:0.1.0 --image api:latest \
   --file docker/Dockerfile.api .
@@ -127,7 +127,7 @@ helm upgrade --install teams-msgs deploy/helm/teams-msgs \
 ## 10. Atualizar Bot messaging endpoint
 
 ```bash
-az bot update -n bot-tmd-poc -g rg-tmd-poc \
+az bot update -n bot-<seu-bot> -g rg-<seu-rg> \
   --endpoint "https://teams-msgs-dotnet.brazilsouth.cloudapp.azure.com/api/messages"
 ```
 
@@ -163,6 +163,6 @@ Upload em **Teams Admin Center → Manage apps → Upload custom app**, depois *
 ## Teardown
 
 ```bash
-az group delete -n rg-tmd-poc --yes --no-wait
+az group delete -n rg-<seu-rg> --yes --no-wait
 az ad app delete --id "$APP_ID"
 ```

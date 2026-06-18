@@ -96,7 +96,7 @@ graph LR
     Users[👥 Usuários do Teams]
     BF[Bot Framework]
 
-    subgraph "AKS Cluster: aks-tmd-poc"
+    subgraph "AKS Cluster: aks-<seu-cluster>"
         subgraph "Namespace aks-istio-ingress"
             Gateway[Istio Gateway<br/>Public LB<br/>HTTP→443 TLS<br/>Let's Encrypt]
         end
@@ -119,9 +119,9 @@ graph LR
     end
 
     subgraph "Support / control plane"
-        AzBot[Azure Bot<br/>bot-tmd-poc]
+        AzBot[Azure Bot<br/>bot-<seu-bot>]
         ACR[Container Registry<br/>crtmd…]
-        Logs[Log Analytics<br/>log-tmd-poc<br/>25MB/dia cap]
+        Logs[Log Analytics<br/>log-<seu-workspace><br/>25MB/dia cap]
         UAMI[UAMI<br/>id-tmd-poc-app<br/>3 federated creds]
     end
 
@@ -196,15 +196,15 @@ flowchart LR
 | Recurso | Nome na demo | SKU | Função |
 |---|---|---|---|
 | App Registration | associado ao Azure Bot | Free | Identidade do bot (SingleTenant) |
-| Azure Bot | `bot-tmd-poc` | F0 | Registro Bot Framework + canal Teams |
-| AKS | `aks-tmd-poc` | Base / Free control plane | Cluster gerenciado; nodes `Standard_D2s_v5` x2 |
+| Azure Bot | `bot-<seu-bot>` | F0 | Registro Bot Framework + canal Teams |
+| AKS | `aks-<seu-cluster>` | Base / Free control plane | Cluster gerenciado; nodes `Standard_D2s_v5` x2 |
 | AKS add-on KEDA | nativo do cluster | — | Escala worker pela profundidade da Storage Queue |
 | AKS add-on Istio | `mesh enable` + `mesh enable-ingress-gateway` | — | Service mesh + Istio Gateway externo para ingress |
 | Gateway API CRDs | v1.2.0 | — | Padrão Kubernetes Gateway (substitui Ingress) |
 | cert-manager | jetstack/cert-manager v1.20.2 | — | Let's Encrypt automático via `gatewayHTTPRoute` solver |
 | Storage Account | `sttmd…` | Standard_LRS | Tables: `conversationrefs`, `jobs`, `sentmarks`. Queues: `send-messages`, `send-messages-poison` |
 | Container Registry | `crtmd…` | Basic | Imagens API + Worker |
-| Log Analytics | `log-tmd-poc` | PerGB2018 (cap 25 MB/dia) | Container Insights do AKS |
+| Log Analytics | `log-<seu-workspace>` | PerGB2018 (cap 25 MB/dia) | Container Insights do AKS |
 | User-Assigned MI | `id-tmd-poc-app` | — | UAMI federada a 3 SAs (api, worker, keda-operator) |
 
 ---
@@ -691,9 +691,9 @@ az deployment sub create \
   --parameters deploy/bicep/main.bicepparam
 
 # 3) AKS add-ons (Istio Gateway externo + Gateway API CRDs)
-az aks mesh enable-ingress-gateway -g rg-tmd-poc -n aks-tmd-poc \
+az aks mesh enable-ingress-gateway -g rg-<seu-rg> -n aks-<seu-cluster> \
   --ingress-gateway-type external
-az aks get-credentials -g rg-tmd-poc -n aks-tmd-poc
+az aks get-credentials -g rg-<seu-rg> -n aks-<seu-cluster>
 kubectl apply -f \
   https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.0/standard-install.yaml
 
@@ -703,7 +703,7 @@ helm upgrade --install cert-manager jetstack/cert-manager \
   -n cert-manager --create-namespace --set crds.enabled=true --wait
 
 # 5) Atribui DNS label ao Public IP do Istio Gateway
-MC_RG=$(az aks show -g rg-tmd-poc -n aks-tmd-poc --query nodeResourceGroup -o tsv)
+MC_RG=$(az aks show -g rg-<seu-rg> -n aks-<seu-cluster> --query nodeResourceGroup -o tsv)
 IP_NAME=$(az network public-ip list -g $MC_RG \
   --query "[?contains(name,'kubernetes')] | [0].name" -o tsv)
 az network public-ip update -g $MC_RG -n $IP_NAME --dns-name teams-msgs-dotnet
@@ -714,7 +714,7 @@ kubectl apply -f deploy/clusterissuer-gw.yaml \
               -f deploy/istio-cert.yaml
 
 # 7) Build das imagens no ACR
-ACR=$(az acr list -g rg-tmd-poc --query "[0].name" -o tsv)
+ACR=$(az acr list -g rg-<seu-rg> --query "[0].name" -o tsv)
 az acr build -r $ACR --image api:0.1.0 -f docker/Dockerfile.api .
 az acr build -r $ACR --image worker:0.1.0 -f docker/Dockerfile.worker .
 
@@ -729,7 +729,7 @@ helm upgrade --install teams-msgs deploy/helm/teams-msgs \
   -f deploy/helm/teams-msgs/values-poc.yaml
 
 # 9) Atualiza Messaging Endpoint do Azure Bot
-az bot update -g rg-tmd-poc -n bot-tmd-poc \
+az bot update -g rg-<seu-rg> -n bot-<seu-bot> \
   --endpoint "https://teams-msgs-dotnet.brazilsouth.cloudapp.azure.com/api/messages"
 ```
 

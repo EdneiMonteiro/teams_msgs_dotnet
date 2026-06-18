@@ -125,10 +125,10 @@ az storage message peek -q send-messages-poison --account-name <sa> --auth-mode 
 
 ### Log Analytics em `OverQuota`
 
-Capacidade atingida do limite diário (configuramos 25 MB/dia em `log-tmd-poc`). Reinício diário às 09:00 UTC. Para aumentar:
+Capacidade atingida do limite diário (configuramos 25 MB/dia em `log-<seu-workspace>`). Reinício diário às 09:00 UTC. Para aumentar:
 
 ```bash
-az monitor log-analytics workspace update -g rg-tmd-poc -n log-tmd-poc --quota 1
+az monitor log-analytics workspace update -g rg-<seu-rg> -n log-<seu-workspace> --quota 1
 ```
 
 Para reduzir ingest: subir `Logging:LogLevel:Default` para `Warning` ou `Error` no `ConfigMap`.
