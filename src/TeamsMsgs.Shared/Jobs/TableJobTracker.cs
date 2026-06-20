@@ -70,15 +70,19 @@ public sealed class TableJobTracker : IJobTracker
         _table = factory.CreateTableClient(options.Value.JobsTableName);
         _logger = logger;
 
+        // O counter de job é uma entidade "quente": sob alta concorrência (muitos
+        // workers KEDA incrementando o mesmo registro), o conflito de ETag (412) é
+        // frequente. Budget de retry generoso garante convergência (cada tentativa
+        // é um read+write barato) sem estourar o visibility timeout da fila (5min).
         _retry = new ResiliencePipelineBuilder()
             .AddRetry(new Polly.Retry.RetryStrategyOptions
             {
                 ShouldHandle = new PredicateBuilder().Handle<RequestFailedException>(static ex =>
-                    ex.Status is 412 or 408 or 500 or 502 or 503 or 504),
-                MaxRetryAttempts = 8,
+                    ex.Status is 412 or 409 or 408 or 429 or 500 or 502 or 503 or 504),
+                MaxRetryAttempts = 50,
                 BackoffType = DelayBackoffType.Exponential,
-                Delay = TimeSpan.FromMilliseconds(25),
-                MaxDelay = TimeSpan.FromMilliseconds(500),
+                Delay = TimeSpan.FromMilliseconds(50),
+                MaxDelay = TimeSpan.FromSeconds(2),
                 UseJitter = true,
             })
             .Build();
