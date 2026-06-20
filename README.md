@@ -733,7 +733,7 @@ az bot update -g rg-<seu-rg> -n bot-<seu-bot> \
   --endpoint "https://teams-msgs-dotnet.brazilsouth.cloudapp.azure.com/api/messages"
 ```
 
-> Stack validado em `subscription <subscription-id>-…` (tenant `<tenant-id>-…`), região `brazilsouth`. Outputs do Bicep e os passos completos estão em [`docs/deploy.md`](./docs/deploy.md).
+> Stack validado em ambiente PoC (região `brazilsouth`). Outputs do Bicep e os passos completos estão em [`docs/deploy.md`](./docs/deploy.md).
 
 ---
 
