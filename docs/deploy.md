@@ -30,13 +30,19 @@ echo "APP_PWD=$PWD"
 
 Edite `deploy/bicep/main.bicepparam` preenchendo `botMsaAppId` (pode ficar vazio no primeiro deploy e re-aplicar depois).
 
+O ACR é compartilhado (em outro RG da subscription). Informe os nomes via env vars **local-only** (não commitar) — o `main.bicepparam` lê de `SHARED_ACR_NAME`/`SHARED_ACR_RG`:
+
 ```bash
 az account set --subscription <SUB_ID>
+export SHARED_ACR_NAME=<acr-compartilhado>      # PowerShell: $env:SHARED_ACR_NAME='...'
+export SHARED_ACR_RG=<rg-do-acr-compartilhado>  # PowerShell: $env:SHARED_ACR_RG='...'
 az deployment sub create \
   --location brazilsouth \
   --template-file deploy/bicep/main.bicep \
   --parameters deploy/bicep/main.bicepparam
 ```
+
+> O kubelet do AKS recebe `AcrPull` no ACR compartilhado via `modules/acr-rbac.bicep` (scope no RG do ACR) — requer permissão de role assignment nesse RG.
 
 Outputs relevantes (`az deployment sub show -n <name> --query properties.outputs`):
 - `acrLoginServer`
@@ -89,15 +95,17 @@ kubectl -n aks-istio-ingress get certificate teams-msgs-gw-tls
 # Ready=True quando o cert estiver pronto
 ```
 
-## 7. Build & push das imagens (ACR)
+## 7. Build & push das imagens (ACR compartilhado)
+
+> As imagens vão para o ACR compartilhado (outro RG da subscription); `az acr build` resolve por nome, independente do RG.
 
 ```bash
-ACR=$(az acr list -g rg-<seu-rg> --query "[0].name" -o tsv)
+ACR=<acr-compartilhado>
 az acr build --registry "$ACR" \
-  --image api:0.1.0 --image api:latest \
+  --image teams-msgs/api:0.1.0 --image teams-msgs/api:latest \
   --file docker/Dockerfile.api .
 az acr build --registry "$ACR" \
-  --image worker:0.1.0 --image worker:latest \
+  --image teams-msgs/worker:0.1.0 --image teams-msgs/worker:latest \
   --file docker/Dockerfile.worker .
 ```
 

@@ -11,17 +11,24 @@ param tags object = {}
 
 param logAnalyticsWorkspaceId string
 
+// Ddsv5 tem temp disk local (75 GiB no D2ds_v5) para hospedar o OS disk efêmero;
+// Dsv5 (sem temp disk) mantido como alternativa (efêmero iria para o cache da VM).
 @allowed([
-  'Standard_B2s'
-  'Standard_B2ms'
+  'Standard_D2ds_v5'
+  'Standard_D4ds_v5'
   'Standard_D2s_v5'
   'Standard_D4s_v5'
 ])
-param systemNodeVmSize string = 'Standard_D2s_v5'
+param systemNodeVmSize string = 'Standard_D2ds_v5'
 
 @minValue(1)
 @maxValue(5)
 param systemNodeCount int = 2
+
+@description('Tamanho do OS disk efêmero (GiB). Deve caber no temp/cache da VM.')
+@minValue(30)
+@maxValue(75)
+param osDiskSizeGB int = 30
 
 @description('Habilitar Istio managed add-on (service mesh). Necessário para EnvoyFilter de rate-limit.')
 param enableIstio bool = true
@@ -47,6 +54,8 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         mode: 'System'
         count: systemNodeCount
         vmSize: systemNodeVmSize
+        osDiskType: 'Ephemeral'
+        osDiskSizeGB: osDiskSizeGB
         osType: 'Linux'
         osSKU: 'AzureLinux'
         type: 'VirtualMachineScaleSets'

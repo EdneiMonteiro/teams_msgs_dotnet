@@ -42,6 +42,12 @@ param botMsaAppTenantId string = subscription().tenantId
 @description('URL pública do endpoint /api/messages (depois do Ingress estar pronto). Pode deixar placeholder e atualizar depois.')
 param botMessagingEndpoint string = 'https://example.invalid/api/messages'
 
+@description('Nome do ACR compartilhado (em outro RG da mesma subscription). Informe no deploy; não commitar o valor real.')
+param sharedAcrName string
+
+@description('Resource group do ACR compartilhado. Informe no deploy; não commitar o valor real.')
+param sharedAcrResourceGroup string
+
 var tags = {
   project: 'teams-msgs-dotnet'
   env: environment
@@ -51,7 +57,6 @@ var tags = {
 
 var rgName = 'rg-${prefix}-${environment}'
 var storageName = toLower('st${prefix}${environment}${take(uniqueString(subscription().id, rgName), 6)}')
-var acrName = toLower('cr${prefix}${environment}${take(uniqueString(subscription().id, rgName), 6)}')
 var logName = 'log-${prefix}-${environment}'
 var aksName = 'aks-${prefix}-${environment}'
 var uamiName = 'id-${prefix}-${environment}-app'
@@ -68,16 +73,6 @@ module storage 'modules/storage.bicep' = {
   scope: rg
   params: {
     storageAccountName: storageName
-    location: location
-    tags: tags
-  }
-}
-
-module acr 'modules/acr.bicep' = {
-  name: 'acr'
-  scope: rg
-  params: {
-    registryName: acrName
     location: location
     tags: tags
   }
@@ -119,8 +114,15 @@ module rbac 'modules/rbac.bicep' = {
   scope: rg
   params: {
     storageAccountName: storage.outputs.name
-    acrName: acr.outputs.name
     uamiPrincipalId: identity.outputs.principalId
+  }
+}
+
+module acrRbac 'modules/acr-rbac.bicep' = {
+  name: 'acr-rbac'
+  scope: resourceGroup(sharedAcrResourceGroup)
+  params: {
+    acrName: sharedAcrName
     kubeletPrincipalId: aks.outputs.kubeletIdentityObjectId
   }
 }
@@ -175,8 +177,8 @@ output resourceGroupName string = rg.name
 output storageAccountName string = storage.outputs.name
 output storageTableServiceUri string = storage.outputs.tableServiceUri
 output storageQueueServiceUri string = storage.outputs.queueServiceUri
-output acrName string = acr.outputs.name
-output acrLoginServer string = acr.outputs.loginServer
+output acrName string = sharedAcrName
+output acrLoginServer string = '${sharedAcrName}.azurecr.io'
 output logAnalyticsWorkspaceId string = log.outputs.id
 output aksName string = aks.outputs.name
 output aksOidcIssuerUrl string = aks.outputs.oidcIssuerUrl

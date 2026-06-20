@@ -27,7 +27,7 @@ Port em **.NET 8** da demo [`teams_msgs`](https://github.com/EdneiMonteiro/teams
 | 🔑 Sem connection strings | Workload Identity (federated credentials) em 3 SAs: `teams-msgs-api`, `teams-msgs-worker`, `kube-system:keda-operator` |
 | 🛡️ HTTPS Let's Encrypt | cert-manager 1.20 + Gateway API + solver `gatewayHTTPRoute` (sem NGINX) |
 | 🧪 Testes | xUnit (26 testes) cobrindo validator, retry, idempotency, safe row key |
-| 🏗️ IaC | Bicep subscription-scope (AKS + Istio + KEDA + WI + Storage + ACR + Log Analytics + Bot) |
+| 🏗️ IaC | Bicep subscription-scope (AKS + Istio + KEDA + WI + Storage + Log Analytics + Bot); ACR compartilhado em RG externo |
 | 🚢 Deploy | Helm chart com KEDA `ScaledObject` (`azure-queue`), HPA CPU para API, EnvoyFilter para rate limit |
 
 ---
@@ -120,7 +120,7 @@ graph LR
 
     subgraph "Support / control plane"
         AzBot[Azure Bot<br/>bot-<seu-bot>]
-        ACR[Container Registry<br/>crtmd…]
+        ACR[Container Registry<br/>compartilhado · RG externo]
         Logs[Log Analytics<br/>log-<seu-workspace><br/>25MB/dia cap]
         UAMI[UAMI<br/>id-tmd-poc-app<br/>3 federated creds]
     end
@@ -197,13 +197,13 @@ flowchart LR
 |---|---|---|---|
 | App Registration | associado ao Azure Bot | Free | Identidade do bot (SingleTenant) |
 | Azure Bot | `bot-<seu-bot>` | F0 | Registro Bot Framework + canal Teams |
-| AKS | `aks-<seu-cluster>` | Base / Free control plane | Cluster gerenciado; nodes `Standard_D2s_v5` x2 |
+| AKS | `aks-<seu-cluster>` | Base / Free control plane | Cluster gerenciado; nodes `Standard_D2ds_v5` x2, OS disk efêmero |
 | AKS add-on KEDA | nativo do cluster | — | Escala worker pela profundidade da Storage Queue |
 | AKS add-on Istio | `mesh enable` + `mesh enable-ingress-gateway` | — | Service mesh + Istio Gateway externo para ingress |
 | Gateway API CRDs | v1.2.0 | — | Padrão Kubernetes Gateway (substitui Ingress) |
 | cert-manager | jetstack/cert-manager v1.20.2 | — | Let's Encrypt automático via `gatewayHTTPRoute` solver |
 | Storage Account | `sttmd…` | Standard_LRS | Tables: `conversationrefs`, `jobs`, `sentmarks`. Queues: `send-messages`, `send-messages-poison` |
-| Container Registry | `crtmd…` | Basic | Imagens API + Worker |
+| Container Registry | compartilhado (RG externo) | Basic | Imagens API + Worker (fora do RG da PoC) |
 | Log Analytics | `log-<seu-workspace>` | PerGB2018 (cap 25 MB/dia) | Container Insights do AKS |
 | User-Assigned MI | `id-tmd-poc-app` | — | UAMI federada a 3 SAs (api, worker, keda-operator) |
 
@@ -578,7 +578,7 @@ teams_msgs_dotnet/
 │   │   ├── main.bicepparam
 │   │   └── modules/
 │   │       ├── storage.bicep
-│   │       ├── acr.bicep
+│   │       ├── acr-rbac.bicep        # AcrPull no ACR compartilhado (RG externo)
 │   │       ├── aks.bicep
 │   │       ├── loganalytics.bicep
 │   │       ├── identity.bicep
@@ -683,8 +683,9 @@ az ad sp create --id "$APP_ID"
 PWD=$(az ad app credential reset --id "$APP_ID" --append \
   --display-name "k8s" --years 1 --query password -o tsv)
 
-# 2) Bicep — cria RG + Storage + ACR + Log Analytics + UAMI + AKS + federations
-#     + Azure Bot (se botMsaAppId for fornecido)
+# 2) Bicep — cria RG + Storage + Log Analytics + UAMI + AKS + federations
+#     + Azure Bot (se botMsaAppId for fornecido); AcrPull no ACR compartilhado
+export SHARED_ACR_NAME=<acr-compartilhado>; export SHARED_ACR_RG=<rg-do-acr>
 az deployment sub create \
   --location brazilsouth \
   --template-file deploy/bicep/main.bicep \
@@ -713,10 +714,10 @@ kubectl apply -f deploy/clusterissuer-gw.yaml \
               -f deploy/istio-gateway.yaml \
               -f deploy/istio-cert.yaml
 
-# 7) Build das imagens no ACR
-ACR=$(az acr list -g rg-<seu-rg> --query "[0].name" -o tsv)
-az acr build -r $ACR --image api:0.1.0 -f docker/Dockerfile.api .
-az acr build -r $ACR --image worker:0.1.0 -f docker/Dockerfile.worker .
+# 7) Build das imagens no ACR compartilhado (resolve por nome, RG externo)
+ACR=<acr-compartilhado>
+az acr build -r $ACR --image teams-msgs/api:0.1.0 -f docker/Dockerfile.api .
+az acr build -r $ACR --image teams-msgs/worker:0.1.0 -f docker/Dockerfile.worker .
 
 # 8) Helm: cria values-poc.yaml a partir do template e dos outputs do Bicep
 cp deploy/helm/teams-msgs/values-poc.yaml.template deploy/helm/teams-msgs/values-poc.yaml

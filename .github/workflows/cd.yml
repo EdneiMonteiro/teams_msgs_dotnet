@@ -21,7 +21,7 @@ permissions:
 env:
   AZ_SUBSCRIPTION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   AZ_RG: ${{ vars.AZ_RG }}              # configurar via AZ_RG repo variable
-  AZ_ACR: ${{ vars.AZ_ACR }}            # configurar via AZ_ACR repo variable
+  AZ_ACR: ${{ vars.AZ_ACR }}            # nome do ACR compartilhado (definir como repo variable)
   AZ_AKS: ${{ vars.AZ_AKS }}            # configurar via AZ_AKS repo variable
   HELM_NAMESPACE: teams-msgs
   HELM_RELEASE: teams-msgs
@@ -51,30 +51,28 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZ_SUBSCRIPTION }}
 
-      - name: Discover ACR name (if not set)
-        id: acr
+      - name: Validate shared registry
         run: |
-          ACR="${{ vars.AZ_ACR }}"
-          if [ -z "$ACR" ]; then
-            ACR=$(az acr list -g $AZ_RG --query "[0].name" -o tsv)
+          if [ -z "${AZ_ACR}" ]; then
+            echo "AZ_ACR não configurado. Defina a repo variable AZ_ACR com o nome do ACR compartilhado." >&2
+            exit 1
           fi
-          echo "name=$ACR" >> $GITHUB_OUTPUT
 
       - name: ACR build (API)
         run: |
           az acr build \
-            --registry ${{ steps.acr.outputs.name }} \
-            --image api:${{ steps.tag.outputs.tag }} \
-            --image api:latest \
+            --registry $AZ_ACR \
+            --image teams-msgs/api:${{ steps.tag.outputs.tag }} \
+            --image teams-msgs/api:latest \
             --file docker/Dockerfile.api \
             .
 
       - name: ACR build (Worker)
         run: |
           az acr build \
-            --registry ${{ steps.acr.outputs.name }} \
-            --image worker:${{ steps.tag.outputs.tag }} \
-            --image worker:latest \
+            --registry $AZ_ACR \
+            --image teams-msgs/worker:${{ steps.tag.outputs.tag }} \
+            --image teams-msgs/worker:latest \
             --file docker/Dockerfile.worker \
             .
 
@@ -98,22 +96,13 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - name: Resolve image registry
-        id: acr
-        run: |
-          ACR="${{ vars.AZ_ACR }}"
-          if [ -z "$ACR" ]; then
-            ACR=$(az acr list -g $AZ_RG --query "[0].name" -o tsv)
-          fi
-          echo "registry=${ACR}.azurecr.io" >> $GITHUB_OUTPUT
-
       - name: Helm upgrade
         run: |
           helm upgrade --install $HELM_RELEASE deploy/helm/teams-msgs \
             --create-namespace -n $HELM_NAMESPACE \
             -f deploy/helm/teams-msgs/values.yaml \
             -f deploy/helm/teams-msgs/values-poc.yaml \
-            --set image.registry=${{ steps.acr.outputs.registry }} \
+            --set image.registry=${AZ_ACR}.azurecr.io \
             --set image.apiTag=${{ needs.build-push.outputs.tag }} \
             --set image.workerTag=${{ needs.build-push.outputs.tag }} \
             --wait --timeout 5m

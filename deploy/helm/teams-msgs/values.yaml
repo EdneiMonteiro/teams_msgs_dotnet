@@ -5,7 +5,7 @@ namespace: teams-msgs
 
 image:
   registry: ""
-  repository: ""
+  repository: "teams-msgs/"
   apiTag: "latest"
   workerTag: "latest"
   pullPolicy: IfNotPresent

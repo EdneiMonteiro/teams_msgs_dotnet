@@ -9,7 +9,7 @@
 #     -f deploy/helm/teams-msgs/values-poc.yaml
 
 image:
-  registry: ""
+  registry: "<acr-compartilhado>.azurecr.io"
   apiTag: "0.1.0"
   workerTag: "0.1.0"
 
