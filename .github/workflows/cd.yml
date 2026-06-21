@@ -1,13 +1,8 @@
 name: CD
 
+# CD manual: rode sob demanda (Actions -> CD -> Run workflow). Não dispara em push
+# para evitar runs vermelhos enquanto o OIDC (AZURE_CLIENT_ID) não estiver configurado.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'docker/**'
-      - 'deploy/helm/**'
-      - '.github/workflows/cd.yml'
   workflow_dispatch:
     inputs:
       tag:

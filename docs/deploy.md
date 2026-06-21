@@ -30,7 +30,7 @@ echo "APP_PWD=$PWD"
 
 Edite `deploy/bicep/main.bicepparam` preenchendo `botMsaAppId` (pode ficar vazio no primeiro deploy e re-aplicar depois).
 
-O ACR é compartilhado (em outro RG da subscription). Informe os nomes via env vars **local-only** (não commitar) — o `main.bicepparam` lê de `SHARED_ACR_NAME`/`SHARED_ACR_RG`:
+O ACR é compartilhado (em outro RG da subscription). **Pré-requisito:** um ACR já existente onde você tenha permissão de atribuir `AcrPull` — se não tiver, crie um: `az acr create -n <acr-compartilhado> -g <rg-do-acr> --sku Basic`. Informe os nomes via env vars **local-only** (não commitar) — o `main.bicepparam` lê de `SHARED_ACR_NAME`/`SHARED_ACR_RG`:
 
 ```bash
 az account set --subscription <SUB_ID>
@@ -101,11 +101,12 @@ kubectl -n aks-istio-ingress get certificate teams-msgs-gw-tls
 
 ```bash
 ACR=<acr-compartilhado>
+# A tag deve casar com image.apiTag/workerTag do values-poc.yaml (o template já vem com 0.1.6).
 az acr build --registry "$ACR" \
-  --image teams-msgs/api:0.1.0 --image teams-msgs/api:latest \
+  --image teams-msgs/api:0.1.6 --image teams-msgs/api:latest \
   --file docker/Dockerfile.api .
 az acr build --registry "$ACR" \
-  --image teams-msgs/worker:0.1.0 --image teams-msgs/worker:latest \
+  --image teams-msgs/worker:0.1.6 --image teams-msgs/worker:latest \
   --file docker/Dockerfile.worker .
 ```
 
@@ -117,6 +118,7 @@ cp deploy/helm/teams-msgs/values-poc.yaml.template deploy/helm/teams-msgs/values
 
 Edite com:
 - `image.registry`: `${ACR}.azurecr.io` (output do Bicep)
+- `image.apiTag`, `image.workerTag`: a tag que você buildou no passo 7 (template já vem com `0.1.6`)
 - `workloadIdentity.uamiClientId`: `uamiClientId` (output do Bicep)
 - `storage.tableServiceUri`, `storage.queueServiceUri`: outputs do Bicep
 - `bot.appId`, `bot.appPassword`: APP_ID e PWD do passo 1

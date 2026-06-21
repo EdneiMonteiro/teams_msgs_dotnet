@@ -62,7 +62,7 @@ Mesma lógica, componentes Azure diferentes:
 | DLQ | SB DLQ automática | `send-messages-poison` (manual, após `DequeueCount > 5`) |
 | Limite por msg | 256 KB (SB) | **64 KB** (Storage Queue) — AdaptiveCards grandes fora do escopo |
 | IaC | (livre escolha) | Bicep subscription-scope |
-| CD | (livre escolha) | Helm chart + GitHub Actions OIDC |
+| CD | (livre escolha) | Helm chart + GitHub Actions OIDC (manual / `workflow_dispatch`) |
 
 ---
 
@@ -598,7 +598,7 @@ teams_msgs_dotnet/
 │   └── package.json
 ├── .github/workflows/
 │   ├── ci.yml                        # build+test+lint (PR)
-│   └── cd.yml                        # OIDC + ACR build + helm upgrade
+│   └── cd.yml                        # CD manual (workflow_dispatch): OIDC + ACR build + helm upgrade
 ├── docs/
 │   ├── architecture.md
 │   ├── deploy.md
