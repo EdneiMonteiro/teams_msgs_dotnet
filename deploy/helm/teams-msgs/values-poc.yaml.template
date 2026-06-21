@@ -10,8 +10,8 @@
 
 image:
   registry: "<acr-compartilhado>.azurecr.io"
-  apiTag: "0.1.1"
-  workerTag: "0.1.4"
+  apiTag: "0.1.6"
+  workerTag: "0.1.6"
 
 workloadIdentity:
   enabled: true

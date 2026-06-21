@@ -54,6 +54,9 @@ public sealed class TableJobTracker : IJobTracker
 {
     private const string PartitionKey = "jobs";
     private const int MaxErrors = 50;
+    // Counter sharding: distribui sent/failed em N sub-entidades (jobId_sN) para
+    // eliminar a contenção de ETag no registro único do job. GetAsync soma os shards.
+    private const int ShardCount = 16;
 
     private readonly TableClient _table;
     private readonly ILogger<TableJobTracker> _logger;
@@ -139,70 +142,126 @@ public sealed class TableJobTracker : IJobTracker
         }, ct);
 
     public Task IncrementSentAsync(string jobId, CancellationToken ct = default)
-        => UpdateAsync(jobId, e =>
-        {
-            var sent = e.GetInt64("sent") ?? 0;
-            var failed = e.GetInt64("failed") ?? 0;
-            var total = e.GetInt64("total") ?? 0;
-            e["sent"] = sent + 1;
-            e["status"] = ((sent + 1) + failed) >= total ? "completed" : "processing";
-            e["updatedAt"] = DateTimeOffset.UtcNow;
-        }, ct);
+        => IncrementShardAsync(jobId, "sent", ct);
 
-    public Task IncrementFailedAsync(string jobId, string? error, CancellationToken ct = default)
-        => UpdateAsync(jobId, e =>
+    public async Task IncrementFailedAsync(string jobId, string? error, CancellationToken ct = default)
+    {
+        await IncrementShardAsync(jobId, "failed", ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(error))
         {
-            var sent = e.GetInt64("sent") ?? 0;
-            var failed = e.GetInt64("failed") ?? 0;
-            var total = e.GetInt64("total") ?? 0;
-            failed += 1;
-            e["failed"] = failed;
+            await AppendErrorAsync(jobId, error!, ct).ConfigureAwait(false);
+        }
+    }
 
-            if (!string.IsNullOrWhiteSpace(error))
+    // Incrementa um shard aleatório (jobId_sN). A contenção por shard é ~ShardCount
+    // menor que no registro único, então o retry de ETag quase nunca é exercido.
+    private async Task IncrementShardAsync(string jobId, string field, CancellationToken ct)
+    {
+        await EnsureAsync(ct).ConfigureAwait(false);
+        var rowKey = $"{jobId}_s{Random.Shared.Next(ShardCount)}";
+        await _retry.ExecuteAsync(async token =>
+        {
+            try
             {
-                var json = e.GetString("errors") ?? "[]";
-                var list = JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
-                if (list.Count < MaxErrors)
-                {
-                    list.Add(error!);
-                    e["errors"] = JsonSerializer.Serialize(list);
-                }
+                var resp = await _table.GetEntityAsync<TableEntity>(PartitionKey, rowKey, cancellationToken: token).ConfigureAwait(false);
+                var entity = resp.Value;
+                entity[field] = (entity.GetInt64(field) ?? 0) + 1;
+                await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Merge, token).ConfigureAwait(false);
             }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                await _table.AddEntityAsync(new TableEntity(PartitionKey, rowKey) { [field] = 1L }, token).ConfigureAwait(false);
+            }
+        }, ct).ConfigureAwait(false);
+    }
 
-            e["status"] = (sent + failed) >= total ? "completed" : "processing";
-            e["updatedAt"] = DateTimeOffset.UtcNow;
-        }, ct);
+    // Erros ficam no registro principal, limitados a MaxErrors; a escrita cessa após o cap
+    // (bounded), então não vira gargalo como os contadores.
+    private async Task AppendErrorAsync(string jobId, string error, CancellationToken ct)
+    {
+        await _retry.ExecuteAsync(async token =>
+        {
+            var resp = await _table.GetEntityAsync<TableEntity>(PartitionKey, jobId, cancellationToken: token).ConfigureAwait(false);
+            var entity = resp.Value;
+            var list = JsonSerializer.Deserialize<List<string>>(entity.GetString("errors") ?? "[]") ?? new List<string>();
+            if (list.Count >= MaxErrors)
+            {
+                return;
+            }
+            list.Add(error);
+            entity["errors"] = JsonSerializer.Serialize(list);
+            entity["updatedAt"] = DateTimeOffset.UtcNow;
+            await _table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Merge, token).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
+    }
 
     public async Task<JobStatus?> GetAsync(string jobId, CancellationToken ct = default)
     {
         await EnsureAsync(ct).ConfigureAwait(false);
+        TableEntity e;
         try
         {
             var response = await _table.GetEntityAsync<TableEntity>(PartitionKey, jobId, cancellationToken: ct).ConfigureAwait(false);
-            var e = response.Value;
-            var total = e.GetInt64("total") ?? 0;
-            var sent = e.GetInt64("sent") ?? 0;
-            var failed = e.GetInt64("failed") ?? 0;
-            var typeStr = e.GetString("messageType") ?? "text";
-            var type = string.Equals(typeStr, "card", StringComparison.OrdinalIgnoreCase) ? MessageType.Card : MessageType.Text;
-            var errorsJson = e.GetString("errors") ?? "[]";
-            var errors = JsonSerializer.Deserialize<List<string>>(errorsJson) ?? new List<string>();
-            return new JobStatus(
-                jobId,
-                e.GetString("message") ?? string.Empty,
-                type,
-                total,
-                sent,
-                failed,
-                e.GetString("status") ?? "unknown",
-                total > 0 ? (int)Math.Round(((double)(sent + failed) / total) * 100) : 0,
-                e.GetDateTimeOffset("createdAt") ?? default,
-                e.GetDateTimeOffset("updatedAt") ?? default,
-                errors);
+            e = response.Value;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
             return null;
+        }
+
+        var (sent, failed) = await SumShardsAsync(jobId, ct).ConfigureAwait(false);
+        var total = e.GetInt64("total") ?? 0;
+        var typeStr = e.GetString("messageType") ?? "text";
+        var type = string.Equals(typeStr, "card", StringComparison.OrdinalIgnoreCase) ? MessageType.Card : MessageType.Text;
+        var errorsJson = e.GetString("errors") ?? "[]";
+        var errors = JsonSerializer.Deserialize<List<string>>(errorsJson) ?? new List<string>();
+
+        // Status "completed" é derivado da soma dos shards vs total (evita "completed"
+        // prematuro enquanto total=0 durante o enqueue).
+        var stored = e.GetString("status") ?? "unknown";
+        var status = (stored != "failed" && total > 0 && (sent + failed) >= total) ? "completed" : stored;
+
+        return new JobStatus(
+            jobId,
+            e.GetString("message") ?? string.Empty,
+            type,
+            total,
+            sent,
+            failed,
+            status,
+            total > 0 ? (int)Math.Round(((double)(sent + failed) / total) * 100) : 0,
+            e.GetDateTimeOffset("createdAt") ?? default,
+            e.GetDateTimeOffset("updatedAt") ?? default,
+            errors);
+    }
+
+    private async Task<(long Sent, long Failed)> SumShardsAsync(string jobId, CancellationToken ct)
+    {
+        var reads = new Task<(long Sent, long Failed)>[ShardCount];
+        for (var i = 0; i < ShardCount; i++)
+        {
+            reads[i] = ReadShardAsync($"{jobId}_s{i}", ct);
+        }
+        var results = await Task.WhenAll(reads).ConfigureAwait(false);
+        long sent = 0, failed = 0;
+        foreach (var (s, f) in results)
+        {
+            sent += s;
+            failed += f;
+        }
+        return (sent, failed);
+    }
+
+    private async Task<(long Sent, long Failed)> ReadShardAsync(string rowKey, CancellationToken ct)
+    {
+        try
+        {
+            var r = await _table.GetEntityAsync<TableEntity>(PartitionKey, rowKey, cancellationToken: ct).ConfigureAwait(false);
+            return (r.Value.GetInt64("sent") ?? 0, r.Value.GetInt64("failed") ?? 0);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return (0, 0);
         }
     }
 
