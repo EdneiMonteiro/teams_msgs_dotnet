@@ -21,7 +21,7 @@ Port em **.NET 8** da demo [`teams_msgs`](https://github.com/EdneiMonteiro/teams
 | 🎯 Rate limit | **Istio EnvoyFilter local_ratelimit** no sidecar outbound do worker (token bucket no Envoy, por pod). Substitui o Lua bucket Redis do repo original |
 | 🎴 Adaptive Cards | `POST /api/send` aceita texto **ou** `{ type:"AdaptiveCard", content:<card> }` |
 | 🔁 Idempotência | Tabela `sentmarks` com insert-or-conflict — substitui a dedup nativa de `messageId` do Service Bus |
-| 📊 Counters atômicos sem Redis | `read-modify-write` em Table Storage com `ETag`/`If-Match` + retry exponencial via `Polly` |
+| 📊 Counters sem Redis (sharded) | Contador do job dividido em **16 shards** (`jobId_sN`) no Table Storage, somados na leitura — elimina a contenção de `ETag` sob alta concorrência de workers |
 | 🩺 Health probes | `/healthz` (liveness) + `/readyz` (Storage Table + Storage Queue + Jobs table) |
 | 🔒 Hardened auth | `x-api-key` com `CryptographicOperations.FixedTimeEquals` |
 | 🔑 Sem connection strings | Workload Identity (federated credentials) em 3 SAs: `teams-msgs-api`, `teams-msgs-worker`, `kube-system:keda-operator` |
@@ -54,7 +54,7 @@ Mesma lógica, componentes Azure diferentes:
 |---|---|---|
 | Runtime | Node 20 + TypeScript | **.NET 8 LTS** (ASP.NET Core Minimal API + Worker Service) |
 | Fila | Azure Service Bus (queue `send-messages`) | **Azure Storage Queue** |
-| Cache / counters / rate-limit | Azure Cache for Redis (HMSET + HINCRBY + Lua bucket) | **Table Storage (ETag) + Istio EnvoyFilter (local_ratelimit)** |
+| Cache / counters / rate-limit | Azure Cache for Redis (HMSET + HINCRBY + Lua bucket) | **Table Storage (counter sharding) + Istio EnvoyFilter (local_ratelimit)** |
 | Compute | Azure Container Apps + KEDA | **AKS + KEDA azure-queue + HPA CPU** |
 | Ingress | (não tinha — ACA built-in) | **AKS managed Istio + Gateway API + cert-manager + Let's Encrypt** |
 | Auth ao Storage | Connection string | **Workload Identity** (federated credentials) |
@@ -74,7 +74,7 @@ Mesma lógica, componentes Azure diferentes:
 - [Endpoints da API](#endpoints-da-api)
 - [Rate limit — Envoy local_ratelimit](#rate-limit--envoy-local_ratelimit)
 - [Idempotência sem dedup nativa](#idempotência-sem-dedup-nativa)
-- [Counters atômicos sem Redis](#counters-atômicos-sem-redis)
+- [Counters sem Redis (sharding)](#counters-sem-redis-sharding)
 - [Segurança](#segurança)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Testes](#testes)
@@ -112,7 +112,7 @@ graph LR
 
     subgraph "Data plane"
         Refs[(Table Storage<br/>conversationrefs)]
-        Jobs[(Table Storage<br/>jobs<br/>ETag counters)]
+        Jobs[(Table Storage<br/>jobs<br/>16 shards)]
         Marks[(Table Storage<br/>sentmarks<br/>idempotência)]
         SQ[(Storage Queue<br/>send-messages)]
         Poison[(Storage Queue<br/>send-messages-poison)]
@@ -137,7 +137,7 @@ graph LR
     Worker -->|ContinueConversation| EnvoyFilter
     EnvoyFilter -->|ratelimited| BF
     BF -->|1:1| Users
-    Worker -->|HINCR via ETag| Jobs
+    Worker -->|incrementa shard| Jobs
     Worker -->|deleteEntity em 403/410| Refs
     Worker -->|DequeueCount>5| Poison
 
@@ -156,7 +156,7 @@ graph LR
 
 **Princípios:**
 
-- **Table Storage = caminho quente E durabilidade**: counters atômicos via `ETag` (HINCR-like), index ativo de refs (varredura por partition), payload da mensagem cacheado por job, **idempotência** via insert-or-conflict.
+- **Table Storage = caminho quente E durabilidade**: counters via **sharding** (16 shards por job, somados na leitura), index ativo de refs (varredura por partition), payload da mensagem cacheado por job, **idempotência** via insert-or-conflict.
 - **Storage Queue = fan-out**: barata, simples, sem dedup nativa (compensada por `sentmarks`). Sem DLQ nativa (compensada por `send-messages-poison`). Limite de 64 KB por msg.
 - **Istio Gateway + cert-manager = entrada única**: HTTPS terminado pelo gateway com cert Let's Encrypt automático. Substitui NGINX Ingress completamente.
 - **AKS = compute**: API com `HPA` por CPU + Worker com `KEDA azure-queue` 0→10. Control plane Free tier; 2 nodes `Standard_D2s_v5`.
@@ -179,7 +179,7 @@ flowchart LR
     M10 -.->|409| M9
     M11 --> M12["Envoy local_ratelimit<br/>token bucket"]
     M12 --> M13{"outcome"}
-    M13 -->|"200"| M14["IncrementSentAsync<br/>ETag retry on 412"]
+    M13 -->|"200"| M14["IncrementSentAsync<br/>incrementa shard"]
     M13 -->|"403/410"| M15["RemoveByRowKeyAsync<br/>IncrementFailedAsync"]
     M13 -->|"429/5xx"| M11
     style M3 fill:#FFE082,color:#000
@@ -241,7 +241,7 @@ sequenceDiagram
     participant GW as Istio Gateway
     participant API as teams-msgs-api
     participant Refs as Table conversationrefs
-    participant Jobs as Table jobs (ETag)
+    participant Jobs as Table jobs (sharded)
     participant Marks as Table sentmarks
     participant SQ as Storage Queue
     participant Worker as Worker (KEDA 0→N)
@@ -276,7 +276,7 @@ sequenceDiagram
             Envoy->>Bot: HTTPS proxied
             Bot->>User: mensagem 1:1
             alt sucesso 200
-                Worker->>Jobs: IncrementSentAsync (ETag retry on 412)
+                Worker->>Jobs: IncrementSentAsync (incrementa shard)
                 Worker->>SQ: DeleteMessage
             else 403/410
                 Worker->>Refs: DeleteEntity (rowKey)
@@ -481,36 +481,28 @@ Custo: 1 escrita extra em Table Storage por mensagem (~0,5 ms p50).
 
 ---
 
-## Counters atômicos sem Redis
+## Counters sem Redis (sharding)
 
-No repo original, contadores de job (`sent`, `failed`, `total`) usavam `HINCRBY` do Redis — atomic e barato.
+No repo original, contadores de job (`sent`, `failed`, `total`) usavam `HINCRBY` do Redis — atômico e barato.
 
-Aqui, usamos **optimistic concurrency** em Table Storage:
+Aqui, o contador é uma entidade **"quente"**: sob alta concorrência de workers KEDA, um registro único sofre forte contenção de `ETag` (`412 Precondition Failed`). Para escalar, `TableJobTracker` **distribui o contador em 16 shards** — `sent`/`failed` ficam em sub-entidades `jobId_s0..jobId_s15`. Cada incremento atualiza **um shard aleatório** (contenção ~16× menor) e a leitura (`GetAsync`) **soma os shards em paralelo**. O `status` (`completed`) é derivado on-read de `(Σsent + Σfailed) ≥ total`.
 
 ```csharp
-var pipeline = new ResiliencePipelineBuilder()
-    .AddRetry(new RetryStrategyOptions {
-        ShouldHandle = new PredicateBuilder().Handle<RequestFailedException>(
-            ex => ex.Status is 412 or 408 or 500 or 502 or 503 or 504),
-        MaxRetryAttempts = 8,
-        BackoffType = DelayBackoffType.Exponential,
-        Delay = TimeSpan.FromMilliseconds(25),
-        MaxDelay = TimeSpan.FromMilliseconds(500),
-        UseJitter = true,
-    })
-    .Build();
-
+// incremento: só um shard
+var rowKey = $"{jobId}_s{Random.Shared.Next(ShardCount)}";   // '_' — Table Storage proíbe '#' em RowKey
 await pipeline.ExecuteAsync(async token => {
-    var response = await table.GetEntityAsync<TableEntity>(pk, rk, ct: token);
-    var entity = response.Value;
-    mutate(entity);   // ex.: entity["sent"] = sent + 1
-    await table.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace, token);
+    try {
+        var e = (await table.GetEntityAsync<TableEntity>(pk, rowKey, ct: token)).Value;
+        e[field] = (e.GetInt64(field) ?? 0) + 1;
+        await table.UpdateEntityAsync(e, e.ETag, TableUpdateMode.Merge, token);
+    } catch (RequestFailedException ex) when (ex.Status == 404) {
+        await table.AddEntityAsync(new TableEntity(pk, rowKey) { [field] = 1L }, token);   // 1º incremento do shard
+    }
 });
+// leitura: GetAsync soma jobId_s0..s15 (Task.WhenAll) → sent/failed totais
 ```
 
-`UpdateEntityAsync` com `entity.ETag` envia `If-Match: <etag>`. Se outro worker já atualizou (etag mudou), retorna `412 Precondition Failed` → Polly faz retry com backoff exponencial + jitter.
-
-**Limitação conhecida**: sob alta concorrência (mais de 500 incrementos simultâneos no mesmo `jobId`), a taxa de retentativas cresce e o tempo de resposta degrada. Para um job de 50 mil mensagens com 10 workers a contenção é administrável; acima de 100 mil considere particionar jobs ou usar Cosmos DB com PATCH atômico.
+**Histórico**: a 1ª versão fazia `read-modify-write` num registro único com retry de `ETag` (Polly). Resolvia a *correção*, mas a entidade quente limitava a *vazão* — o teste de 1.000 fechava 100%, mas o de 50 mil (10 workers) travava por contenção e mandava mensagens para a poison queue. O **sharding eliminou a contenção** (a antiga limitação acima de ~500 incrementos simultâneos no mesmo `jobId`).
 
 ---
 
@@ -562,7 +554,7 @@ teams_msgs_dotnet/
 │       ├── Configuration/Options.cs
 │       ├── Azure/AzureClientFactory.cs  # TableClient/QueueClient com MI ou conn string
 │       ├── Storage/ConversationRefStore.cs
-│       ├── Jobs/TableJobTracker.cs   # ETag counters
+│       ├── Jobs/TableJobTracker.cs   # sharded counters
 │       ├── Jobs/SentMarkStore.cs     # idempotência
 │       ├── Queueing/StorageSendQueue.cs
 │       ├── Sending/SendWithRetry.cs

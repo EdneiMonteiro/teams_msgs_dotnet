@@ -25,7 +25,7 @@ graph LR
     end
 
     Refs[(conversationrefs)]
-    Jobs[(jobs - ETag)]
+    Jobs[(jobs - 16 shards)]
     Marks[(sentmarks)]
     SQ[(send-messages)]
     Poison[(send-messages-poison)]
@@ -65,28 +65,34 @@ graph LR
 - **`teams-msgs-api` Deployment** — pod único por default. `HPA` por CPU (1..5 réplicas, target 70%). Service tipo `ClusterIP` (Istio Gateway faz o ingress).
 - **`teams-msgs-worker` Deployment** — `replicas: 0` no manifest. `KEDA ScaledObject` com trigger `azure-queue` (sem connection string — usa `TriggerAuthentication podIdentity provider=azure-workload`). Escala 0..10.
 - **`HPA` keda-hpa-teams-msgs-worker** — gerenciado pelo KEDA, métrica externa `s0-azure-queue-send-messages`.
+- **System node pool** `sys2` — VMs `Standard_D2ds_v5` com **OS disk efêmero** (sem managed disk → economia, inclusive com o cluster parado). Imagens vêm de um **ACR compartilhado** (RG externo da subscription; kubelet recebe `AcrPull` via módulo Bicep cross-RG `acr-rbac.bicep`).
 
 ### Data plane (Table Storage)
 
 | Tabela | PartitionKey | RowKey | Conteúdo | Substitui |
 |---|---|---|---|---|
 | `conversationrefs` | `refs` | `base64url(conversationId)` | `refJson` (JSON serializado do `ConversationReference`) | mesma da versão TS |
-| `jobs` | `jobs` | `jobId` (GUID) | `total`, `sent`, `failed`, `status`, `messageType`, `message`, `errors`, timestamps | Redis HMSET + HINCRBY |
+| `jobs` | `jobs` | `jobId` (meta) + `jobId_s{0..15}` (shards) | meta: `total`, `status`, `messageType`, `message`, `errors`, timestamps · shards: `sent`/`failed` | Redis HMSET + HINCRBY |
 | `sentmarks` | `jobId` | `md5_hex(refRowKey)_r{repeatIndex}` | `claimedAt` | dedup `messageId` do Service Bus |
 
-#### Counters atômicos sem Redis
+#### Counters sem Redis — sharding
 
-`TableJobTracker` faz `read-modify-write` com `If-Match` (ETag) + `Polly` retry em 412 Precondition Failed. Em alta concorrência o retry exponencial absorve as colisões.
+O contador de progresso (`sent`/`failed`) é uma entidade "quente": sob alta concorrência de workers KEDA, um registro único sofre forte contenção de ETag (412). `TableJobTracker` **distribui o contador em 16 shards** (`jobId_s0..jobId_s15`); cada incremento atualiza um shard aleatório e a leitura (`GetAsync`) **soma os shards** em paralelo. O `status` (`completed`) é derivado on-read de `(Σsent + Σfailed) ≥ total` — o que também evita `completed` prematuro enquanto `total=0` durante o enqueue.
 
 ```csharp
+var rowKey = $"{jobId}_s{Random.Shared.Next(ShardCount)}";   // '_' — Table Storage proíbe '#' em RowKey
 await pipeline.ExecuteAsync(async token => {
-    var response = await table.GetEntityAsync<TableEntity>(pk, rk, ct: token);
-    var entity = response.Value;
-    mutate(entity);                 // ex.: entity["sent"] = sent + 1
-    await table.UpdateEntityAsync(entity, entity.ETag,
-        TableUpdateMode.Replace, token);    // If-Match implícito
+    try {
+        var e = (await table.GetEntityAsync<TableEntity>(pk, rowKey, ct: token)).Value;
+        e[field] = (e.GetInt64(field) ?? 0) + 1;
+        await table.UpdateEntityAsync(e, e.ETag, TableUpdateMode.Merge, token);
+    } catch (RequestFailedException ex) when (ex.Status == 404) {
+        await table.AddEntityAsync(new TableEntity(pk, rowKey) { [field] = 1L }, token);   // 1º incremento do shard
+    }
 });
 ```
+
+> Antes: read-modify-write com retry exponencial (Polly) num registro único — resolvia a correção, mas a entidade quente limitava a vazão (1.000 fechava 100%; 50k travava por contenção e poison). O sharding eliminou a contenção.
 
 #### Idempotência sem dedup nativa
 
@@ -153,7 +159,7 @@ configPatches:
 | Dedup | `messageId` nativo SB | `sentmarks` insert-or-conflict |
 | DLQ | SB DLQ automática | `send-messages-poison` (manual, `DequeueCount > 5`) |
 | Rate limit | Redis Lua bucket global | Envoy `local_ratelimit` por pod |
-| Counters | Redis HINCRBY (atômico) | Table Storage ETag + Polly retry |
+| Counters | Redis HINCRBY (atômico) | Table Storage — counter sharding (16 shards `jobId_sN`) |
 | Cache msg | Redis HMSET | `IMemoryCache` local 5min |
 | Scale-to-zero compute | ACA KEDA | AKS KEDA (control-plane sempre on) |
 | Ingress | ACA built-in | Istio Gateway + cert-manager Let's Encrypt |
