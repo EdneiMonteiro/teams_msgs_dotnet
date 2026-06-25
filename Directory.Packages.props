@@ -6,10 +6,12 @@
 
   <ItemGroup>
     <!-- Azure SDK -->
-    <PackageVersion Include="Azure.Storage.Queues" Version="12.27.0" />
+    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.18.2" />
     <PackageVersion Include="Azure.Data.Tables" Version="12.11.0" />
-    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
     <PackageVersion Include="Azure.Core" Version="1.55.0" />
+
+    <!-- Redis -->
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.16" />
 
     <!-- Bot Framework -->
     <PackageVersion Include="Microsoft.Bot.Builder" Version="4.23.1" />

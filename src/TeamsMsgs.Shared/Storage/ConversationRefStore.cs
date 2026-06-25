@@ -9,8 +9,10 @@ using Azure;
 using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using TeamsMsgs.Shared.Azure;
 using TeamsMsgs.Shared.Configuration;
+using TeamsMsgs.Shared.Redis;
 
 namespace TeamsMsgs.Shared.Storage;
 
@@ -36,19 +38,24 @@ public interface IConversationRefStore
 public sealed class ConversationRefStore : IConversationRefStore
 {
     private const string PartitionKey = "refs";
+    private const string RefsSet = "refs:active";
 
     private readonly TableClient _table;
+    private readonly IRedisConnection _redis;
     private readonly ILogger<ConversationRefStore> _logger;
     private bool _ensured;
 
     public ConversationRefStore(
         AzureClientFactory factory,
+        IRedisConnection redis,
         IOptions<StorageOptions> options,
         ILogger<ConversationRefStore> logger)
     {
         ArgumentNullException.ThrowIfNull(factory);
+        ArgumentNullException.ThrowIfNull(redis);
         ArgumentNullException.ThrowIfNull(options);
         _table = factory.CreateTableClient(options.Value.RefsTableName);
+        _redis = redis;
         _logger = logger;
     }
 
@@ -88,6 +95,7 @@ public sealed class ConversationRefStore : IConversationRefStore
             ["refJson"] = refJson,
         };
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct).ConfigureAwait(false);
+        await TryUpdateIndexAsync(db => db.SetAddAsync(RefsSet, rowKey), rowKey, "SADD").ConfigureAwait(false);
     }
 
     public async Task RemoveAsync(string conversationId, CancellationToken ct = default)
@@ -107,6 +115,20 @@ public sealed class ConversationRefStore : IConversationRefStore
         {
             // já removida
         }
+        await TryUpdateIndexAsync(db => db.SetRemoveAsync(RefsSet, rowKey), rowKey, "SREM").ConfigureAwait(false);
+    }
+
+    // O índice Redis é cache de leitura; falhas não são fatais (Table é a fonte da verdade).
+    private async Task TryUpdateIndexAsync(Func<IDatabase, Task> op, string rowKey, string label)
+    {
+        try
+        {
+            await op(_redis.Database).ConfigureAwait(false);
+        }
+        catch (RedisException ex)
+        {
+            _logger.LogWarning(ex, "Índice Redis {Op} falhou (não-fatal) p/ {RowKey}", label, rowKey);
+        }
     }
 
     public async IAsyncEnumerable<ConversationRef> StreamAsync([EnumeratorCancellation] CancellationToken ct = default)
@@ -122,6 +144,20 @@ public sealed class ConversationRefStore : IConversationRefStore
 
     public async Task<long> CountAsync(CancellationToken ct = default)
     {
+        // Caminho rápido O(1): SCARD do índice Redis. Fallback p/ varredura da Table.
+        try
+        {
+            var card = await _redis.Database.SetLengthAsync(RefsSet).ConfigureAwait(false);
+            if (card > 0)
+            {
+                return card;
+            }
+        }
+        catch (RedisException ex)
+        {
+            _logger.LogWarning(ex, "SCARD falhou; usando varredura da Table como fallback.");
+        }
+
         long count = 0;
         await foreach (var _ in StreamAsync(ct).ConfigureAwait(false))
         {

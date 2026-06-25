@@ -8,8 +8,8 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Data.Tables" />
-    <PackageReference Include="Azure.Identity" />
-    <PackageReference Include="Azure.Storage.Queues" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" />
+    <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="Microsoft.Bot.Builder" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

@@ -10,22 +10,24 @@ image:
   workerTag: "latest"
   pullPolicy: IfNotPresent
 
-workloadIdentity:
-  enabled: true
-  uamiClientId: ""
-
-azure:
-  tenantId: ""
-
+# workloadIdentity removido; auth via connection strings no Secret.
 storage:
-  tableServiceUri: ""
-  queueServiceUri: ""
+  connectionString: ""
   refsTableName: conversationrefs
-  jobsTableName: jobs
-  sentMarksTableName: sentmarks
+
+serviceBus:
+  connectionString: ""
   queueName: send-messages
-  poisonQueueName: send-messages-poison
-  maxDequeueCount: 5
+  maxDeliveryCount: 5
+
+redis:
+  connectionString: ""
+
+rateLimit:
+  enabled: true
+  capacity: 50
+  ratePerSec: 50
+  key: "ratelimit:bot"
 
 bot:
   appId: ""
@@ -74,11 +76,6 @@ worker:
     maxReplicaCount: 10
     queueLength: "20"
     queueLengthDeactivationThreshold: "0"
-  rateLimit:
-    enabled: true
-    maxTokens: 50
-    tokensPerFill: 50
-    fillInterval: 1s
 
 istio:
   enabled: true

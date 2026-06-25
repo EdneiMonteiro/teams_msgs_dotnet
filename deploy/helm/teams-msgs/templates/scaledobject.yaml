@@ -7,9 +7,10 @@ metadata:
   labels:
     {{- include "teams-msgs.worker.labels" . | nindent 4 }}
 spec:
-  podIdentity:
-    provider: azure-workload
-    identityId: {{ .Values.workloadIdentity.uamiClientId | quote }}
+  secretTargetRef:
+    - parameter: connection
+      name: {{ include "teams-msgs.fullname" . }}-secret
+      key: ServiceBus__ConnectionString
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -26,12 +27,11 @@ spec:
   minReplicaCount: {{ .Values.worker.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.worker.keda.maxReplicaCount }}
   triggers:
-    - type: azure-queue
+    - type: azure-servicebus
       authenticationRef:
         name: {{ include "teams-msgs.fullname" . }}-worker-auth
       metadata:
-        queueName: {{ .Values.storage.queueName | quote }}
-        accountName: {{ regexReplaceAll "https://([^.]+)\\..*" .Values.storage.queueServiceUri "${1}" | quote }}
-        queueLength: {{ .Values.worker.keda.queueLength | quote }}
-        activationQueueLength: {{ .Values.worker.keda.queueLengthDeactivationThreshold | quote }}
+        queueName: {{ .Values.serviceBus.queueName | quote }}
+        messageCount: {{ .Values.worker.keda.queueLength | quote }}
+        activationMessageCount: {{ .Values.worker.keda.queueLengthDeactivationThreshold | quote }}
 {{- end }}

@@ -7,16 +7,13 @@ metadata:
     {{- include "teams-msgs.labels" . | nindent 4 }}
 data:
   Logging__LogLevel__Default: {{ .Values.logLevel | quote }}
-  AZURE_CLIENT_ID: {{ .Values.workloadIdentity.uamiClientId | quote }}
-  AZURE_TENANT_ID: {{ .Values.azure.tenantId | quote }}
-  Storage__TableServiceUri: {{ .Values.storage.tableServiceUri | quote }}
-  Storage__QueueServiceUri: {{ .Values.storage.queueServiceUri | quote }}
   Storage__RefsTableName: {{ .Values.storage.refsTableName | quote }}
-  Storage__JobsTableName: {{ .Values.storage.jobsTableName | quote }}
-  Storage__SentMarksTableName: {{ .Values.storage.sentMarksTableName | quote }}
-  Storage__QueueName: {{ .Values.storage.queueName | quote }}
-  Storage__PoisonQueueName: {{ .Values.storage.poisonQueueName | quote }}
-  Storage__MaxDequeueCount: {{ .Values.storage.maxDequeueCount | quote }}
+  ServiceBus__QueueName: {{ .Values.serviceBus.queueName | quote }}
+  ServiceBus__MaxDeliveryCount: {{ .Values.serviceBus.maxDeliveryCount | quote }}
+  RateLimit__Enabled: {{ .Values.rateLimit.enabled | quote }}
+  RateLimit__Capacity: {{ .Values.rateLimit.capacity | quote }}
+  RateLimit__RatePerSec: {{ .Values.rateLimit.ratePerSec | quote }}
+  RateLimit__Key: {{ .Values.rateLimit.key | quote }}
   Bot__AppId: {{ .Values.bot.appId | quote }}
   Bot__TenantId: {{ .Values.bot.tenantId | quote }}
   MicrosoftAppType: "SingleTenant"

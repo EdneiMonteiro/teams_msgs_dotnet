@@ -24,7 +24,7 @@ public static class JobsEndpoint
 
         app.MapGet("/status", async (
             IConversationRefStore refs,
-            IOptions<StorageOptions> storageOptions,
+            IOptions<ServiceBusOptions> serviceBusOptions,
             CancellationToken ct) =>
         {
             var count = await refs.CountAsync(ct).ConfigureAwait(false);
@@ -32,8 +32,8 @@ public static class JobsEndpoint
             {
                 registeredUsers = count,
                 status = "running",
-                mode = "queue",
-                queue = storageOptions.Value.QueueName,
+                mode = "servicebus",
+                queue = serviceBusOptions.Value.QueueName,
             });
         });
 

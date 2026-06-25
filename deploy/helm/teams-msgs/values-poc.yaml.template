@@ -10,19 +10,26 @@
 
 image:
   registry: "<acr-compartilhado>.azurecr.io"
-  apiTag: "0.1.6"
-  workerTag: "0.1.6"
+  apiTag: "0.2.0"
+  workerTag: "0.2.0"
 
-workloadIdentity:
-  enabled: true
-  uamiClientId: ""
-
-azure:
-  tenantId: "<seu-tenant-id>"
-
+# Connection strings vêm dos outputs @secure do Bicep (NÃO commitar):
+#   az deployment sub show -n <name> --query properties.outputs.storageConnectionString.value -o tsv
+#   ...serviceBusConnectionString / ...redisConnectionString
 storage:
-  tableServiceUri: ""
-  queueServiceUri: ""
+  connectionString: "<storage-connection-string>"
+
+serviceBus:
+  connectionString: "<servicebus-connection-string>"
+  queueName: send-messages
+
+redis:
+  connectionString: "<redis-connection-string>"
+
+rateLimit:
+  enabled: true
+  capacity: 50
+  ratePerSec: 50
 
 bot:
   appId: ""

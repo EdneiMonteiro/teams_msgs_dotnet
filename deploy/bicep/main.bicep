@@ -59,7 +59,8 @@ var rgName = 'rg-${prefix}-${environment}'
 var storageName = toLower('st${prefix}${environment}${take(uniqueString(subscription().id, rgName), 6)}')
 var logName = 'log-${prefix}-${environment}'
 var aksName = 'aks-${prefix}-${environment}'
-var uamiName = 'id-${prefix}-${environment}-app'
+var sbName = toLower('sb-${prefix}-${environment}-${take(uniqueString(subscription().id, rgName), 6)}')
+var redisName = toLower('redis-${prefix}-${environment}-${take(uniqueString(subscription().id, rgName), 6)}')
 var botName = 'bot-${prefix}-${environment}'
 
 resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
@@ -88,11 +89,21 @@ module log 'modules/loganalytics.bicep' = {
   }
 }
 
-module identity 'modules/identity.bicep' = {
-  name: 'identity'
+module serviceBus 'modules/servicebus.bicep' = {
+  name: 'servicebus'
   scope: rg
   params: {
-    identityName: uamiName
+    namespaceName: sbName
+    location: location
+    tags: tags
+  }
+}
+
+module redis 'modules/redis.bicep' = {
+  name: 'redis'
+  scope: rg
+  params: {
+    redisName: redisName
     location: location
     tags: tags
   }
@@ -109,54 +120,12 @@ module aks 'modules/aks.bicep' = {
   }
 }
 
-module rbac 'modules/rbac.bicep' = {
-  name: 'rbac'
-  scope: rg
-  params: {
-    storageAccountName: storage.outputs.name
-    uamiPrincipalId: identity.outputs.principalId
-  }
-}
-
 module acrRbac 'modules/acr-rbac.bicep' = {
   name: 'acr-rbac'
   scope: resourceGroup(sharedAcrResourceGroup)
   params: {
     acrName: sharedAcrName
     kubeletPrincipalId: aks.outputs.kubeletIdentityObjectId
-  }
-}
-
-module fedApi 'modules/federation.bicep' = {
-  name: 'fed-api'
-  scope: rg
-  params: {
-    identityName: identity.outputs.name
-    federationName: 'fed-api'
-    oidcIssuerUrl: aks.outputs.oidcIssuerUrl
-    serviceAccountNamespace: 'teams-msgs'
-    serviceAccountName: 'teams-msgs-api'
-  }
-}
-
-module fedWorker 'modules/federation.bicep' = {
-  name: 'fed-worker'
-  scope: rg
-  params: {
-    identityName: identity.outputs.name
-    federationName: 'fed-worker'
-    oidcIssuerUrl: aks.outputs.oidcIssuerUrl
-    serviceAccountNamespace: 'teams-msgs'
-    serviceAccountName: 'teams-msgs-worker'
-  }
-}
-
-module fedKeda 'modules/federation-keda.bicep' = {
-  name: 'fed-keda'
-  scope: rg
-  params: {
-    identityName: identity.outputs.name
-    oidcIssuerUrl: aks.outputs.oidcIssuerUrl
   }
 }
 
@@ -175,12 +144,19 @@ module bot 'modules/bot.bicep' = if (!empty(botMsaAppId)) {
 
 output resourceGroupName string = rg.name
 output storageAccountName string = storage.outputs.name
-output storageTableServiceUri string = storage.outputs.tableServiceUri
-output storageQueueServiceUri string = storage.outputs.queueServiceUri
+output serviceBusQueueName string = serviceBus.outputs.queueName
+output redisHostName string = redis.outputs.hostName
 output acrName string = sharedAcrName
 output acrLoginServer string = '${sharedAcrName}.azurecr.io'
 output logAnalyticsWorkspaceId string = log.outputs.id
 output aksName string = aks.outputs.name
-output aksOidcIssuerUrl string = aks.outputs.oidcIssuerUrl
-output uamiClientId string = identity.outputs.clientId
-output uamiId string = identity.outputs.id
+
+@description('Connection strings (secrets) para o K8s Secret — não commitar.')
+@secure()
+output storageConnectionString string = storage.outputs.connectionString
+
+@secure()
+output serviceBusConnectionString string = serviceBus.outputs.connectionString
+
+@secure()
+output redisConnectionString string = redis.outputs.connectionString

@@ -16,6 +16,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using TeamsMsgs.Shared.Configuration;
 using TeamsMsgs.Shared.Jobs;
+using TeamsMsgs.Shared.Messaging;
 using TeamsMsgs.Shared.Queueing;
 using TeamsMsgs.Shared.Storage;
 using TeamsMsgs.Shared.Validation;
@@ -43,7 +44,6 @@ public static class SendEndpoint
         CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("SendEndpoint");
-        var concurrency = apiOptions.Value.SendFlushConcurrency;
 
         SendRequestBody? body;
         try
@@ -86,8 +86,9 @@ public static class SendEndpoint
         // Cria job com total provisório; ajusta depois com a contagem real.
         await jobs.CreateAsync(jobId, validated.Serialized, validated.Type, 0L, ct).ConfigureAwait(false);
 
-        using var semaphore = new SemaphoreSlim(concurrency);
-        var inFlight = new List<Task>();
+        // Fan-out em batches do Service Bus, com buffer para não materializar tudo.
+        const int BufferSize = 500;
+        var buffer = new List<QueueMessageBody>(BufferSize);
         long refsSeen = 0;
         long enqueued = 0;
 
@@ -98,25 +99,20 @@ public static class SendEndpoint
                 refsSeen++;
                 for (var r = 0; r < repeat; r++)
                 {
-                    await semaphore.WaitAsync(ct).ConfigureAwait(false);
-                    var msg = new QueueMessageBody(jobId, refEntity.RefJson, refEntity.RowKey, r);
-                    var task = Task.Run(async () =>
+                    buffer.Add(new QueueMessageBody(jobId, refEntity.RefJson, refEntity.RowKey, r));
+                    if (buffer.Count >= BufferSize)
                     {
-                        try
-                        {
-                            await queue.EnqueueAsync(msg, ct).ConfigureAwait(false);
-                            Interlocked.Increment(ref enqueued);
-                        }
-                        finally
-                        {
-                            semaphore.Release();
-                        }
-                    }, ct);
-                    inFlight.Add(task);
+                        enqueued += await queue.EnqueueBatchAsync(buffer, ct).ConfigureAwait(false);
+                        buffer.Clear();
+                    }
                 }
             }
 
-            await Task.WhenAll(inFlight).ConfigureAwait(false);
+            if (buffer.Count > 0)
+            {
+                enqueued += await queue.EnqueueBatchAsync(buffer, ct).ConfigureAwait(false);
+                buffer.Clear();
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

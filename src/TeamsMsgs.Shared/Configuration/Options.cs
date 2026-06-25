@@ -3,29 +3,50 @@
 
 namespace TeamsMsgs.Shared.Configuration;
 
-/// <summary>Options for Storage Account (tables + queues) connectivity.</summary>
+/// <summary>Storage Account (Table) connectivity — durable conversation refs.</summary>
 public sealed class StorageOptions
 {
     public const string SectionName = "Storage";
 
-    /// <summary>Optional connection string (dev). In prod prefer service URIs + Managed Identity.</summary>
+    /// <summary>Connection string for the Storage Account (Table service).</summary>
     public string? ConnectionString { get; set; }
 
-    public string? TableServiceUri { get; set; }
-
-    public string? QueueServiceUri { get; set; }
-
     public string RefsTableName { get; set; } = "conversationrefs";
+}
 
-    public string JobsTableName { get; set; } = "jobs";
+/// <summary>Azure Service Bus connectivity (replaces Storage Queue).</summary>
+public sealed class ServiceBusOptions
+{
+    public const string SectionName = "ServiceBus";
 
-    public string SentMarksTableName { get; set; } = "sentmarks";
+    public string? ConnectionString { get; set; }
 
     public string QueueName { get; set; } = "send-messages";
 
-    public string PoisonQueueName { get; set; } = "send-messages-poison";
+    /// <summary>Deliveries before the broker dead-letters the message (native DLQ).</summary>
+    public int MaxDeliveryCount { get; set; } = 5;
+}
 
-    public int MaxDequeueCount { get; set; } = 5;
+/// <summary>Redis connectivity — job counters, refs index, message cache, rate-limit bucket.</summary>
+public sealed class RedisOptions
+{
+    public const string SectionName = "Redis";
+
+    public string? ConnectionString { get; set; }
+}
+
+/// <summary>Global token-bucket rate limit (Redis-backed) for Bot Framework egress.</summary>
+public sealed class RateLimitOptions
+{
+    public const string SectionName = "RateLimit";
+
+    public bool Enabled { get; set; } = true;
+
+    public int Capacity { get; set; } = 50;
+
+    public int RatePerSec { get; set; } = 50;
+
+    public string Key { get; set; } = "ratelimit:bot";
 }
 
 public sealed class BotOptions

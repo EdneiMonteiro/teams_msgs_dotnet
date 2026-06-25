@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Ednei Monteiro. Licensed under the MIT License.
 // See LICENSE and DISCLAIMER.md in the project root for details.
 //
-// Storage Account + Tables (conversationrefs, jobs, sentmarks) +
-// Queues (send-messages, send-messages-poison).
+// Storage Account + Table `conversationrefs` (refs duráveis — fonte da verdade).
+// Counters/cache/rate-limit migraram para o Redis; a fila migrou para o
+// Service Bus. Autenticação por connection string (Workload Identity removido).
 
 @minLength(3)
 @maxLength(24)
@@ -26,7 +27,6 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     allowSharedKeyAccess: true
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
-    defaultToOAuthAuthentication: true
     publicNetworkAccess: 'Enabled'
   }
 }
@@ -36,33 +36,14 @@ resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-0
   parent: storage
 }
 
-resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
-  name: 'default'
-  parent: storage
-}
-
-var tableNames = [
-  'conversationrefs'
-  'jobs'
-  'sentmarks'
-]
-
-resource tables 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = [for name in tableNames: {
-  name: name
+resource refsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+  name: 'conversationrefs'
   parent: tableService
-}]
-
-var queueNames = [
-  'send-messages'
-  'send-messages-poison'
-]
-
-resource queues 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = [for name in queueNames: {
-  name: name
-  parent: queueService
-}]
+}
 
 output id string = storage.id
 output name string = storage.name
-output tableServiceUri string = storage.properties.primaryEndpoints.table
-output queueServiceUri string = storage.properties.primaryEndpoints.queue
+
+@description('Connection string (secret) da Storage Account — não commitar.')
+@secure()
+output connectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}'

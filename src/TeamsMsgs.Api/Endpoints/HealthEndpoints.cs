@@ -2,7 +2,7 @@
 // See LICENSE and DISCLAIMER.md in the project root for details.
 
 using TeamsMsgs.Shared.Jobs;
-using TeamsMsgs.Shared.Queueing;
+using TeamsMsgs.Shared.Messaging;
 using TeamsMsgs.Shared.Storage;
 
 namespace TeamsMsgs.Api.Endpoints;
@@ -25,17 +25,18 @@ public static class HealthEndpoints
             ISendQueue queue,
             CancellationToken ct) =>
         {
+            // jobs.PingAsync = Redis; refs.PingAsync = Table Storage; queue.PingAsync = Service Bus.
             var storageTask = refs.PingAsync(ct);
-            var jobsTask = jobs.PingAsync(ct);
-            var queueTask = queue.PingAsync(ct);
-            await Task.WhenAll(storageTask, jobsTask, queueTask).ConfigureAwait(false);
+            var redisTask = jobs.PingAsync(ct);
+            var serviceBusTask = queue.PingAsync(ct);
+            await Task.WhenAll(storageTask, redisTask, serviceBusTask).ConfigureAwait(false);
 
-            var ok = storageTask.Result && jobsTask.Result && queueTask.Result;
+            var ok = storageTask.Result && redisTask.Result && serviceBusTask.Result;
             var body = new
             {
+                redis = redisTask.Result,
                 storage = storageTask.Result,
-                jobs = jobsTask.Result,
-                queue = queueTask.Result,
+                serviceBus = serviceBusTask.Result,
             };
             return ok ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
         });

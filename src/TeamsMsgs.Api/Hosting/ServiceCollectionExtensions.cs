@@ -1,12 +1,14 @@
 // Copyright (c) 2026 Ednei Monteiro. Licensed under the MIT License.
 // See LICENSE and DISCLAIMER.md in the project root for details.
 
-using Microsoft.Bot.Builder;
+using Azure.Messaging.ServiceBus;
+using Microsoft.Extensions.Options;
 using TeamsMsgs.Shared.Azure;
 using TeamsMsgs.Shared.Bot;
 using TeamsMsgs.Shared.Configuration;
 using TeamsMsgs.Shared.Jobs;
-using TeamsMsgs.Shared.Queueing;
+using TeamsMsgs.Shared.Messaging;
+using TeamsMsgs.Shared.Redis;
 using TeamsMsgs.Shared.Storage;
 
 namespace TeamsMsgs.Api.Hosting;
@@ -20,14 +22,19 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddOptions<StorageOptions>().Bind(configuration.GetSection(StorageOptions.SectionName));
+        services.AddOptions<ServiceBusOptions>().Bind(configuration.GetSection(ServiceBusOptions.SectionName));
+        services.AddOptions<RedisOptions>().Bind(configuration.GetSection(RedisOptions.SectionName));
         services.AddOptions<BotOptions>().Bind(configuration.GetSection(BotOptions.SectionName));
         services.AddOptions<ApiOptions>().Bind(configuration.GetSection(ApiOptions.SectionName));
 
         services.AddSingleton<AzureClientFactory>();
+        services.AddSingleton<IRedisConnection, RedisConnection>();
+        services.AddSingleton(sp =>
+            new ServiceBusClient(sp.GetRequiredService<IOptions<ServiceBusOptions>>().Value.ConnectionString));
+
         services.AddSingleton<IConversationRefStore, ConversationRefStore>();
-        services.AddSingleton<IJobTracker, TableJobTracker>();
-        services.AddSingleton<ISentMarkStore, TableSentMarkStore>();
-        services.AddSingleton<ISendQueue, StorageSendQueue>();
+        services.AddSingleton<IJobTracker, RedisJobTracker>();
+        services.AddSingleton<ISendQueue, ServiceBusSendQueue>();
         services.AddSingleton<IRefStore, ConversationRefStoreAdapter>();
 
         return services;

@@ -1,18 +1,16 @@
 // Copyright (c) 2026 Ednei Monteiro. Licensed under the MIT License.
 // See LICENSE and DISCLAIMER.md in the project root for details.
 //
-// BackgroundService que consome `send-messages` da Storage Queue.
-// Replica a lógica de worker/src/worker.ts:
-//   1. Receive (até 32 msg) com visibility timeout.
-//   2. Para cada msg: parse → resolve message (cache local) → SentMarkStore
-//      claim (idempotência) → ContinueConversationAsync → counters.
+// BackgroundService que consome a fila do Azure Service Bus (PeekLock).
+//   1. Receive (até PollBatchSize) com lock do broker.
+//   2. Para cada msg: parse → resolve message (cache local + Redis) →
+//      rate limit (token bucket Redis) → ContinueConversation → counters.
 //   3. Em 403/410: remove ref do Table Storage.
-//   4. dequeueCount > MaxDequeueCount → poison queue.
-//
-// Sem token bucket no código: rate-limit é responsabilidade do sidecar Envoy
-// (Istio EnvoyFilter local_ratelimit) no AKS.
+//   4. Falha transitória → Abandon (redelivery; o broker dead-letters ao
+//      exceder MaxDeliveryCount). Idempotência é nativa (MessageId determinístico).
 
 using System.Text.Json;
+using Azure.Messaging.ServiceBus;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Schema;
@@ -22,7 +20,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using TeamsMsgs.Shared.Configuration;
 using TeamsMsgs.Shared.Jobs;
+using TeamsMsgs.Shared.Messaging;
 using TeamsMsgs.Shared.Queueing;
+using TeamsMsgs.Shared.RateLimiting;
 using TeamsMsgs.Shared.Sending;
 using TeamsMsgs.Shared.Storage;
 
@@ -31,38 +31,42 @@ namespace TeamsMsgs.Worker.Hosting;
 public sealed class QueueConsumerService : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan ReceiveMaxWait = TimeSpan.FromSeconds(5);
 
     private readonly ISendQueueReceiver _receiver;
     private readonly IJobTracker _jobs;
-    private readonly ISentMarkStore _marks;
     private readonly IConversationRefStore _refs;
+    private readonly IRateLimiter _rateLimiter;
     private readonly CloudAdapter _adapter;
     private readonly IMemoryCache _cache;
     private readonly WorkerOptions _workerOptions;
-    private readonly StorageOptions _storageOptions;
+    private readonly ServiceBusOptions _serviceBusOptions;
+    private readonly RateLimitOptions _rateLimitOptions;
     private readonly BotOptions _botOptions;
     private readonly ILogger<QueueConsumerService> _logger;
 
     public QueueConsumerService(
         ISendQueueReceiver receiver,
         IJobTracker jobs,
-        ISentMarkStore marks,
         IConversationRefStore refs,
+        IRateLimiter rateLimiter,
         CloudAdapter adapter,
         IMemoryCache cache,
         IOptions<WorkerOptions> workerOptions,
-        IOptions<StorageOptions> storageOptions,
+        IOptions<ServiceBusOptions> serviceBusOptions,
+        IOptions<RateLimitOptions> rateLimitOptions,
         IOptions<BotOptions> botOptions,
         ILogger<QueueConsumerService> logger)
     {
         _receiver = receiver;
         _jobs = jobs;
-        _marks = marks;
         _refs = refs;
+        _rateLimiter = rateLimiter;
         _adapter = adapter;
         _cache = cache;
         _workerOptions = workerOptions.Value;
-        _storageOptions = storageOptions.Value;
+        _serviceBusOptions = serviceBusOptions.Value;
+        _rateLimitOptions = rateLimitOptions.Value;
         _botOptions = botOptions.Value;
         _logger = logger;
     }
@@ -70,25 +74,23 @@ public sealed class QueueConsumerService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "Worker iniciado. queue={Queue}, maxConcurrent={Max}, maxDequeue={MaxDQ}",
-            _storageOptions.QueueName, _workerOptions.MaxConcurrent, _storageOptions.MaxDequeueCount);
-
-        await _receiver.EnsureCreatedAsync(stoppingToken).ConfigureAwait(false);
+            "Worker iniciado. queue={Queue}, maxConcurrent={Max}, maxDelivery={MaxDC}",
+            _serviceBusOptions.QueueName, _workerOptions.MaxConcurrent, _serviceBusOptions.MaxDeliveryCount);
 
         using var concurrencyGate = new SemaphoreSlim(_workerOptions.MaxConcurrent);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            IReadOnlyList<Azure.Storage.Queues.Models.QueueMessage> batch;
+            IReadOnlyList<ServiceBusReceivedMessage> batch;
             try
             {
                 batch = await _receiver
-                    .ReceiveAsync(_workerOptions.PollBatchSize, _workerOptions.VisibilityTimeout, stoppingToken)
+                    .ReceiveAsync(_workerOptions.PollBatchSize, ReceiveMaxWait, stoppingToken)
                     .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogError(ex, "Falha ao receber mensagens da Storage Queue. Tentando novamente em {Delay}.",
+                _logger.LogError(ex, "Falha ao receber do Service Bus. Tentando novamente em {Delay}.",
                     _workerOptions.EmptyQueueBackoff);
                 await Task.Delay(_workerOptions.EmptyQueueBackoff, stoppingToken).ConfigureAwait(false);
                 continue;
@@ -96,7 +98,6 @@ public sealed class QueueConsumerService : BackgroundService
 
             if (batch.Count == 0)
             {
-                await Task.Delay(_workerOptions.EmptyQueueBackoff, stoppingToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -113,6 +114,14 @@ public sealed class QueueConsumerService : BackgroundService
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogError(ex, "Erro inesperado processando msg {MessageId}", message.MessageId);
+                        try
+                        {
+                            await _receiver.AbandonAsync(message, stoppingToken).ConfigureAwait(false);
+                        }
+                        catch (ServiceBusException)
+                        {
+                            // lock perdido/expirado — o broker reentrega.
+                        }
                     }
                     finally
                     {
@@ -127,33 +136,24 @@ public sealed class QueueConsumerService : BackgroundService
         _logger.LogInformation("Worker encerrando.");
     }
 
-    private async Task ProcessAsync(Azure.Storage.Queues.Models.QueueMessage message, CancellationToken ct)
+    private async Task ProcessAsync(ServiceBusReceivedMessage message, CancellationToken ct)
     {
-        if (message.DequeueCount > _storageOptions.MaxDequeueCount)
-        {
-            _logger.LogWarning(
-                "Msg {MessageId} excedeu MaxDequeueCount={Max}. Enviando para poison queue.",
-                message.MessageId, _storageOptions.MaxDequeueCount);
-            await _receiver.SendToPoisonAsync(message, ct).ConfigureAwait(false);
-            return;
-        }
-
         QueueMessageBody? body;
         try
         {
-            body = JsonSerializer.Deserialize<QueueMessageBody>(message.MessageText, JsonOptions);
+            body = JsonSerializer.Deserialize<QueueMessageBody>(message.Body.ToString(), JsonOptions);
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Msg {MessageId} JSON inválido. Enviando para poison.", message.MessageId);
-            await _receiver.SendToPoisonAsync(message, ct).ConfigureAwait(false);
+            _logger.LogError(ex, "Msg {MessageId} JSON inválido. Dead-letter.", message.MessageId);
+            await _receiver.DeadLetterAsync(message, "InvalidJson", ct).ConfigureAwait(false);
             return;
         }
 
         if (body is null || string.IsNullOrEmpty(body.JobId) || string.IsNullOrEmpty(body.RefJson))
         {
-            _logger.LogError("Msg {MessageId} sem JobId/RefJson. Enviando para poison.", message.MessageId);
-            await _receiver.SendToPoisonAsync(message, ct).ConfigureAwait(false);
+            _logger.LogError("Msg {MessageId} sem JobId/RefJson. Dead-letter.", message.MessageId);
+            await _receiver.DeadLetterAsync(message, "MissingFields", ct).ConfigureAwait(false);
             return;
         }
 
@@ -162,15 +162,6 @@ public sealed class QueueConsumerService : BackgroundService
         {
             _logger.LogError("Job {JobId} não encontrado (expirado?). Drop msg {MessageId}.", body.JobId, message.MessageId);
             await _jobs.IncrementFailedAsync(body.JobId, "Job não encontrado", ct).ConfigureAwait(false);
-            await _receiver.CompleteAsync(message, ct).ConfigureAwait(false);
-            return;
-        }
-
-        // Idempotência: tenta cravar marker antes do envio.
-        var claimed = await _marks.TryClaimAsync(body.JobId, body.RowKey, body.RepeatIndex, ct).ConfigureAwait(false);
-        if (!claimed)
-        {
-            _logger.LogDebug("Msg {MessageId} já entregue (idempotente). Completando fila.", message.MessageId);
             await _receiver.CompleteAsync(message, ct).ConfigureAwait(false);
             return;
         }
@@ -187,6 +178,12 @@ public sealed class QueueConsumerService : BackgroundService
             await _jobs.IncrementFailedAsync(body.JobId, $"refJson inválido: {ex.Message}", ct).ConfigureAwait(false);
             await _receiver.CompleteAsync(message, ct).ConfigureAwait(false);
             return;
+        }
+
+        // Rate limit global (token bucket Redis) antes do envio ao Bot Framework.
+        if (_rateLimitOptions.Enabled)
+        {
+            await _rateLimiter.AcquireAsync(ct).ConfigureAwait(false);
         }
 
         var outcome = await SendWithRetry.ExecuteAsync(
@@ -209,27 +206,31 @@ public sealed class QueueConsumerService : BackgroundService
             return;
         }
 
-        if (outcome.StatusCode is 403 or 410)
-        {
-            try
-            {
-                await _refs.RemoveByRowKeyAsync(body.RowKey, ct).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.LogWarning(ex, "Falha ao remover ref {RowKey}", body.RowKey);
-            }
-        }
-
-        await _jobs.IncrementFailedAsync(body.JobId, outcome.ErrorMsg, ct).ConfigureAwait(false);
-        _logger.LogWarning("❌ Job {JobId} msg {MessageId}: {Status} {Error}",
-            body.JobId, message.MessageId, outcome.StatusCode, outcome.ErrorMsg);
-
         if (outcome.Permanent)
         {
+            if (outcome.StatusCode is 403 or 410)
+            {
+                try
+                {
+                    await _refs.RemoveByRowKeyAsync(body.RowKey, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Falha ao remover ref {RowKey}", body.RowKey);
+                }
+            }
+
+            await _jobs.IncrementFailedAsync(body.JobId, outcome.ErrorMsg, ct).ConfigureAwait(false);
+            _logger.LogWarning("❌ Job {JobId} msg {MessageId}: {Status} {Error}",
+                body.JobId, message.MessageId, outcome.StatusCode, outcome.ErrorMsg);
             await _receiver.CompleteAsync(message, ct).ConfigureAwait(false);
+            return;
         }
-        // Transient → não deleta da fila → Storage Queue redeliveryará após visibility timeout.
+
+        // Transitória: abandona → broker reentrega; ao exceder MaxDeliveryCount vai p/ DLQ.
+        _logger.LogWarning("⚠️ Job {JobId} msg {MessageId} transitória: {Status} {Error}. Abandon.",
+            body.JobId, message.MessageId, outcome.StatusCode, outcome.ErrorMsg);
+        await _receiver.AbandonAsync(message, ct).ConfigureAwait(false);
     }
 
     private static Task DeliverAsync(ITurnContext turn, ResolvedMessage resolved, CancellationToken ct)

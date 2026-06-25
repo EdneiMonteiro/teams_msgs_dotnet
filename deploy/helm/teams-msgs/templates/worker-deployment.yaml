@@ -14,9 +14,6 @@ spec:
     metadata:
       labels:
         {{- include "teams-msgs.worker.selectorLabels" . | nindent 8 }}
-        {{- if .Values.workloadIdentity.enabled }}
-        azure.workload.identity/use: "true"
-        {{- end }}
     spec:
       serviceAccountName: teams-msgs-worker
       containers:
