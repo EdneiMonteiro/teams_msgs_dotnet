@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Teams Proactive Messaging · .NET 8 / AKS — Apresentação</title>
+<style>
+  :root{
+    --bg:#0a0f1e; --bg2:#0d1426; --panel:#111a30; --panel2:#152037;
+    --ink:#e8eefc; --muted:#9fb0d0; --line:#243150;
+    --azure:#2f9bff; --azure2:#0078d4; --dotnet:#a87bff; --k8s:#4f86ff;
+    --green:#34d399; --amber:#fbbf24; --red:#f87171; --teal:#2dd4bf;
+    --code:#0b1322;
+    --shadow:0 18px 50px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    background:radial-gradient(1200px 700px at 80% -10%,#16224080,transparent),
+               radial-gradient(900px 600px at -10% 110%,#1b1140aa,transparent),
+               var(--bg);
+    color:var(--ink); overflow:hidden;
+  }
+  .deck{position:fixed; inset:0; overflow:hidden}
+  .track{display:flex; height:100%; transition:transform .45s cubic-bezier(.4,.05,.2,1); will-change:transform}
+  .slide{
+    flex:0 0 100vw; height:100vh; overflow-y:auto; overflow-x:hidden;
+    padding:64px 7vw 84px; scrollbar-width:thin; scrollbar-color:var(--line) transparent;
+  }
+  .slide::-webkit-scrollbar{width:10px}
+  .slide::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px}
+  .slide-inner{max-width:1180px; margin:0 auto; animation:rise .5s ease both}
+  @keyframes rise{from{opacity:0; transform:translateY(14px)}to{opacity:1; transform:none}}
+
+  h1,h2,h3{line-height:1.12; margin:0 0 .35em}
+  h1{font-size:clamp(30px,4.4vw,56px); letter-spacing:-.5px}
+  h2{font-size:clamp(24px,3vw,38px); letter-spacing:-.3px}
+  h3{font-size:clamp(17px,1.6vw,21px); color:var(--azure)}
+  p{color:var(--muted); font-size:clamp(15px,1.25vw,18px); line-height:1.55}
+  .lead{font-size:clamp(16px,1.45vw,20px); color:#c7d4ee}
+  .eyebrow{display:inline-block; font-size:13px; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--azure); font-weight:700; margin-bottom:14px}
+  .kicker{color:var(--dotnet)}
+  a{color:var(--azure)}
+
+  .grid{display:grid; gap:18px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media (max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr}}
+
+  .card{background:linear-gradient(180deg,var(--panel),var(--bg2));
+    border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:var(--shadow)}
+  .card h3{margin-top:0}
+  .card.flat{box-shadow:none}
+  .card .big{font-size:34px; font-weight:800; color:var(--ink)}
+  .pill{display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px;
+    background:#0f1a31; border:1px solid var(--line); color:#cfe0ff; font-size:13px; font-weight:600}
+  .pills{display:flex; flex-wrap:wrap; gap:10px; margin:10px 0}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .b-azure{background:var(--azure)} .b-dotnet{background:var(--dotnet)} .b-k8s{background:var(--k8s)}
+  .b-green{background:var(--green)} .b-amber{background:var(--amber)} .b-red{background:var(--red)} .b-teal{background:var(--teal)}
+
+  ul{margin:.2em 0 .2em 1.1em; padding:0}
+  li{color:var(--muted); margin:.4em 0; font-size:clamp(14px,1.2vw,17px); line-height:1.5}
+  li b, p b{color:#dce7ff}
+  .check li{list-style:none; position:relative; margin-left:.2em; padding-left:1.7em}
+  .check li::before{content:"▸"; color:var(--azure); position:absolute; left:0; top:0; font-weight:800}
+
+  table{width:100%; border-collapse:collapse; font-size:clamp(13px,1.05vw,15.5px); overflow:hidden;
+    border-radius:12px; border:1px solid var(--line)}
+  th,td{text-align:left; padding:10px 13px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{background:#0f1a31; color:#bcd0f5; font-weight:700; letter-spacing:.02em}
+  tr:last-child td{border-bottom:none}
+  td{color:var(--muted)} td b{color:#e6eeff}
+  tbody tr:nth-child(even){background:#0c1426}
+  .mono{font-family:"Cascadia Code",ui-monospace,Consolas,"SFMono-Regular",monospace}
+
+  pre.code{background:var(--code); border:1px solid var(--line); border-left:3px solid var(--azure);
+    border-radius:12px; padding:14px 16px; overflow:auto; font-size:13.5px; line-height:1.5;
+    font-family:"Cascadia Code",ui-monospace,Consolas,monospace; color:#d7e3ff}
+  pre.code .c{color:#6b7ba6} pre.code .k{color:#7cc4ff} pre.code .s{color:#7ee0b0} pre.code .n{color:#f0b86e}
+
+  .diagram{background:#0a1020; border:1px solid var(--line); border-radius:16px;
+    padding:14px; overflow:auto; box-shadow:inset 0 0 40px #00060f}
+  .mermaid{display:flex; justify-content:center; min-height:60px}
+  .mermaid svg{max-width:100%; height:auto; background:transparent}
+  .diag-caption{color:#7e8fb5; font-size:13px; margin-top:8px; text-align:center}
+
+  /* Force a consistent dark theme on rendered mermaid SVG (overrides inline styles) */
+  .mermaid .cluster rect{fill:#0c142a!important; stroke:#33446b!important; rx:10}
+  .mermaid .cluster text, .mermaid .cluster .cluster-label{fill:#9cc2ff!important}
+  .mermaid .cluster span, .mermaid .cluster .nodeLabel{color:#9cc2ff!important}
+  .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon,
+  .mermaid .node path, .mermaid .node ellipse{fill:#16224a!important; stroke:#2f9bff!important; stroke-width:1.3px}
+  .mermaid .node rect, .mermaid .node circle, .mermaid .node polygon, .mermaid .node ellipse{fill:#16224a!important}
+  .mermaid .node .label, .mermaid .nodeLabel, .mermaid .nodeLabel p, .mermaid .node text{color:#e8eefc!important; fill:#e8eefc!important}
+  .mermaid .edgePath .path, .mermaid .flowchart-link, .mermaid path.path{stroke:#7e8fb5!important}
+  .mermaid .edgeLabel, .mermaid .edgeLabel p, .mermaid .edgeLabel span{color:#cdd9f3!important; fill:#cdd9f3!important; background-color:#0a1020!important}
+  .mermaid .edgeLabel rect{fill:#0a1020!important; opacity:.92}
+  .mermaid marker path, .mermaid .arrowheadPath, .mermaid #arrowhead path{fill:#7e8fb5!important; stroke:#7e8fb5!important}
+  /* sequence */
+  .mermaid .actor, .mermaid rect.actor{fill:#16224a!important; stroke:#2f9bff!important}
+  .mermaid text.actor, .mermaid text.actor>tspan{fill:#e8eefc!important; stroke:none!important}
+  .mermaid .actor-line{stroke:#5b6f9c!important}
+  .mermaid .messageText{fill:#cdd9f3!important; stroke:none!important}
+  .mermaid .messageLine0, .mermaid .messageLine1{stroke:#8fa0c4!important}
+  .mermaid .loopLine{stroke:#5b6f9c!important}
+  .mermaid .labelBox{fill:#16224a!important; stroke:#33446b!important}
+  .mermaid .labelText, .mermaid .labelText>tspan, .mermaid .loopText, .mermaid .loopText>tspan{fill:#e8eefc!important; stroke:none!important}
+  .mermaid .note{fill:#23304f!important; stroke:#33446b!important}
+  .mermaid .noteText, .mermaid .noteText>tspan{fill:#e8eefc!important; stroke:none!important}
+  .mermaid rect.activation0, .mermaid rect.activation1, .mermaid rect.activation2{fill:#26324f!important; stroke:#33446b!important}
+  /* class diagram */
+  .mermaid g.classGroup rect, .mermaid .classGroup .title{fill:#16224a!important; stroke:#2f9bff!important}
+  .mermaid g.classGroup text, .mermaid .classGroup .label, .mermaid .classLabel .label{fill:#e8eefc!important; color:#e8eefc!important}
+  .mermaid .classGroup line, .mermaid .divider{stroke:#33446b!important}
+  .mermaid .relation{stroke:#7e8fb5!important; fill:none!important}
+  .mermaid #classDiagram-arrowhead, .mermaid .relation .marker, .mermaid path.relation{stroke:#7e8fb5!important}
+
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin-top:12px}
+  .legend span{display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--muted)}
+
+  .tag{font-size:12px; font-weight:700; padding:3px 9px; border-radius:7px; border:1px solid var(--line)}
+  .t-get{color:#7ee0b0; background:#0e2018} .t-post{color:#ffd27a; background:#231a07}
+  .t-none{color:#9fb0d0; background:#141c30}
+
+  .note{border:1px solid var(--line); border-left:3px solid var(--amber); background:#1a1606aa;
+    border-radius:10px; padding:12px 15px; color:#e9dcb6; font-size:14.5px}
+  .ok{border-left-color:var(--green); background:#0c1d16aa; color:#bdf0d6}
+  .danger{border-left-color:var(--red); background:#1f0f10aa; color:#f6c9c9}
+
+  /* chrome */
+  .topbar{position:fixed; top:0; left:0; right:0; height:5px; background:#0a1020; z-index:40}
+  .progress{height:100%; width:0; background:linear-gradient(90deg,var(--azure2),var(--azure),var(--dotnet)); transition:width .35s}
+  .brand{position:fixed; top:16px; left:24px; z-index:30; display:flex; align-items:center; gap:10px;
+    font-weight:700; font-size:14px; color:#cdd9f3; letter-spacing:.02em}
+  .brand .mk{width:11px;height:11px;border-radius:3px;background:linear-gradient(135deg,var(--azure),var(--dotnet))}
+  .nav{position:fixed; bottom:16px; right:22px; z-index:30; display:flex; align-items:center; gap:8px}
+  .nav button,.menu-btn{background:var(--panel2); color:var(--ink); border:1px solid var(--line);
+    border-radius:10px; padding:9px 13px; font-size:14px; cursor:pointer; transition:.15s}
+  .nav button:hover,.menu-btn:hover{background:#1c2a4a; border-color:var(--azure)}
+  .nav .count{min-width:62px; text-align:center; color:var(--muted); font-variant-numeric:tabular-nums; font-size:13px}
+  .menu-btn{position:fixed; bottom:16px; left:22px; z-index:30; display:flex; align-items:center; gap:8px}
+
+  .toc{position:fixed; inset:0; z-index:50; background:rgba(5,9,18,.78); backdrop-filter:blur(7px);
+    display:none; padding:6vh 6vw}
+  .toc.open{display:block; animation:fade .25s ease both}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .toc-inner{max-width:980px; margin:0 auto; background:linear-gradient(180deg,var(--panel),var(--bg2));
+    border:1px solid var(--line); border-radius:18px; padding:26px 28px; box-shadow:var(--shadow); max-height:88vh; overflow:auto}
+  .toc h2{margin-bottom:14px}
+  .toc ol{columns:2; column-gap:34px; margin:0; padding:0; list-style:none; counter-reset:t}
+  @media (max-width:760px){.toc ol{columns:1}}
+  .toc li{counter-increment:t; break-inside:avoid; margin:0 0 8px; cursor:pointer; color:#cdd9f3;
+    padding:9px 12px; border-radius:10px; border:1px solid transparent; font-size:15px}
+  .toc li::before{content:counter(t,decimal-leading-zero); color:var(--azure); font-weight:800; margin-right:11px; font-variant-numeric:tabular-nums}
+  .toc li:hover{background:#16224a; border-color:var(--line)}
+  .toc-close{float:right; cursor:pointer; color:var(--muted); border:1px solid var(--line); border-radius:9px; padding:6px 11px}
+
+  .hint{position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:25; color:#5d6e95; font-size:12.5px}
+  .footer-meta{margin-top:26px; color:#6f80a6; font-size:13px; border-top:1px solid var(--line); padding-top:14px}
+
+  @media print{
+    body,.deck{overflow:visible; height:auto}
+    .track{display:block; transform:none!important}
+    .slide{height:auto; min-height:auto; page-break-after:always; padding:30px 24px}
+    .brand,.nav,.menu-btn,.hint,.topbar,.toc{display:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="topbar"><div class="progress" id="progress"></div></div>
+<div class="brand"><span class="mk"></span> teams_msgs_dotnet</div>
+
+<div class="deck">
+  <div class="track" id="track">
+
+  <!-- 1 · TITLE -->
+  <section class="slide" data-title="Capa">
+    <div class="slide-inner">
+      <span class="eyebrow">Demo / Prova de conceito · Azure</span>
+      <h1>📨 Teams Proactive Messaging<br/><span class="kicker">.NET 8 · AKS · Service Bus · Redis</span></h1>
+      <p class="lead" style="max-width:820px">
+        Envio de mensagens proativas <b>1:1 em massa</b> no Microsoft Teams via <b>Bot Framework</b>,
+        respeitando rate limits. Port em .NET 8 da demo Node/TS, com o mesmo data plane:
+        <b>Service Bus</b> para fan-out, <b>Redis</b> para counters/índice/cache/rate limit e
+        <b>Table Storage</b> como fonte durável das conversation refs; compute em AKS + KEDA + Istio.
+      </p>
+      <div class="pills">
+        <span class="pill"><span class="dot b-dotnet"></span>.NET 8 LTS</span>
+        <span class="pill"><span class="dot b-k8s"></span>AKS + KEDA</span>
+        <span class="pill"><span class="dot b-azure"></span>Service Bus Standard</span>
+        <span class="pill"><span class="dot b-teal"></span>Azure Managed Redis</span>
+        <span class="pill"><span class="dot b-green"></span>Connection strings em Secret</span>
+        <span class="pill"><span class="dot b-amber"></span>Bicep IaC</span>
+      </div>
+      <div class="grid g4" style="margin-top:26px">
+        <div class="card"><h3>Fan-out</h3><div class="big">0→10</div><p>workers KEDA por Service Bus</p></div>
+        <div class="card"><h3>Counters</h3><div class="big">Redis</div><p>HINCRBY atômico</p></div>
+        <div class="card"><h3>Testes</h3><div class="big">38</div><p>xUnit · 0 falhas</p></div>
+        <div class="card"><h3>Vazão</h3><div class="big">3.149</div><p>msg/min · teste 50k (teto 50/s)</p></div>
+      </div>
+      <p class="footer-meta">MIT License · Ednei Monteiro · github.com/EdneiMonteiro/teams_msgs_dotnet — não afiliado nem endossado pela Microsoft.</p>
+    </div>
+  </section>
+
+  <!-- 2 · AGENDA -->
+  <section class="slide" data-title="Agenda">
+    <div class="slide-inner">
+      <span class="eyebrow">Roteiro</span>
+      <h2>O que esta apresentação cobre</h2>
+      <div class="grid g3" style="margin-top:18px">
+        <div class="card"><h3>Arquitetura</h3><ul class="check"><li>Visão geral &amp; componentes</li><li>Recursos Azure</li><li>Diferenças vs versão TypeScript</li></ul></div>
+        <div class="card"><h3>IaC &amp; Configuração</h3><ul class="check"><li>Bicep subscription-scope</li><li>Connection strings &amp; Secret</li><li>Helm values &amp; Options</li></ul></div>
+        <div class="card"><h3>Dados &amp; Resiliência</h3><ul class="check"><li>Table refs + Redis</li><li>Redis (4 papéis)</li><li>Dedup nativa &amp; DLQ</li></ul></div>
+        <div class="card"><h3>Segurança</h3><ul class="check"><li>Connection strings</li><li>x-api-key + TLS</li><li>AcrPull para imagens</li></ul></div>
+        <div class="card"><h3>Fluxo de execução</h3><ul class="check"><li>Registro (passivo)</li><li>Disparo do comunicado</li><li>Tratamento de erros</li></ul></div>
+        <div class="card"><h3>Código</h3><ul class="check"><li>Diagrama de classes</li><li>Sequência das classes</li><li>Deploy, testes &amp; load</li></ul></div>
+      </div>
+      <p class="hint-inline" style="margin-top:18px;color:#6f80a6;font-size:13px">Use ← → para navegar · tecla <b>M</b> ou o botão “Índice” para pular entre slides.</p>
+    </div>
+  </section>
+
+  <!-- 3 · PROBLEMA -->
+  <section class="slide" data-title="O problema & por quê">
+    <div class="slide-inner">
+      <span class="eyebrow">Motivação</span>
+      <h2>Por que Bot Framework — e não Power Automate ou Graph?</h2>
+      <p class="lead">Comunicação corporativa em massa via Teams exige o canal certo. A demo <b>não burla rate limits</b>: usa proactive messaging do Bot Framework.</p>
+      <table style="margin-top:8px">
+        <thead><tr><th>Abordagem</th><th>Realidade</th></tr></thead>
+        <tbody>
+          <tr><td><b>Power Automate</b></td><td>Limites por licença e conector; não projetado para processamento massivo — sofre throttling e latência.</td></tr>
+          <tr><td><b>Microsoft Graph</b></td><td>Throttling multi-nível (app, tenant, user); adequado para integração, não para broadcast massivo.</td></tr>
+          <tr><td><b>Bot Framework</b> ✅</td><td>Canal nativo para notificações e proactive messaging; melhor suporte a escala, com rate limits dinâmicos.</td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:18px">
+        O envio depende do Teams App estar instalado por usuário (org-wide via Admin Center). O bot captura uma
+        <b>conversationReference</b> por usuário e a usa depois para mandar mensagens 1:1 <b>sem nova interação</b>.
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · VISÃO GERAL -->
+  <section class="slide" data-title="Visão geral da solução">
+    <div class="slide-inner">
+      <span class="eyebrow">Big picture</span>
+      <h2>Dois serviços, Service Bus no meio, Redis no caminho quente</h2>
+      <div class="grid g2" style="margin-top:8px">
+        <div class="card">
+          <h3>teams-msgs-api</h3>
+          <ul class="check">
+            <li><b>ASP.NET Core Minimal API</b> · HPA 1..5 por CPU</li>
+            <li>Recebe webhooks do Bot (<span class="mono">/api/messages</span>) e grava refs</li>
+            <li><span class="mono">POST /api/send</span>: streaming das refs + batches no Service Bus</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>teams-msgs-worker</h3>
+          <ul class="check">
+            <li><b>Worker Service</b> (BackgroundService) · KEDA 0..10</li>
+            <li>Consome Service Bus em <b>PeekLock</b>; dedup nativa via <span class="mono">messageId</span></li>
+            <li>Token bucket Redis antes do <span class="mono">ContinueConversation</span> → Bot Framework (1:1)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="grid g4" style="margin-top:18px">
+        <div class="card flat"><h3>Fila</h3><p>Service Bus <span class="mono">send-messages</span>: batches, dedup nativa + DLQ</p></div>
+        <div class="card flat"><h3>Estado</h3><p>Table refs (<span class="mono">conversationrefs</span>) + Redis: counters, índice, cache, bucket</p></div>
+        <div class="card flat"><h3>Ingress</h3><p>Istio Gateway + cert-manager + Let's Encrypt</p></div>
+        <div class="card flat"><h3>Rate limit</h3><p>Token bucket Redis (Lua) global entre todos os workers</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · ARQUITETURA -->
+  <section class="slide" data-title="Diagrama de arquitetura">
+    <div class="slide-inner">
+      <span class="eyebrow">Arquitetura</span>
+      <h2>Visão geral end-to-end</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+flowchart LR
+  Client["App chamadora"]
+  Users["Usuários do Teams"]
+  BF["Bot Framework"]
+  subgraph AKS["AKS Cluster"]
+    subgraph IN["ns aks-istio-ingress"]
+      GW["Istio Gateway · LB · TLS 443"]
+    end
+    subgraph TM["ns teams-msgs"]
+      API["teams-msgs-api · HPA 1..5"]
+      WK["teams-msgs-worker · KEDA 0..10"]
+    end
+    subgraph CMNS["ns cert-manager"]
+      CM["cert-manager · gatewayHTTPRoute"]
+    end
+  end
+  Refs[("Table conversationrefs")]
+  Redis[("Redis · counters + índice<br/>cache + token bucket")]
+  SB[("Service Bus send-messages")]
+  DLQ[("DLQ nativa $DeadLetterQueue")]
+  Secret["K8s Secret · connection strings"]
+  AzBot["Azure Bot F0"]
+  ACR["ACR compartilhado"]
+  Logs["Log Analytics · cap 25MB/dia"]
+
+  Client -->|"POST /api/send · x-api-key"| GW
+  GW --> API
+  API -->|stream refs| Refs
+  API -->|create/update job · SCARD| Redis
+  API -->|fan-out batches · messageId| SB
+  SB -->|KEDA azure-servicebus| WK
+  WK -->|getMessage · HINCRBY| Redis
+  WK -->|acquire token| Redis
+  WK -->|ContinueConversation| BF
+  BF -->|1:1| Users
+  WK -->|403/410 remove| Refs
+  WK -->|Abandon até maxDeliveryCount| SB
+  SB -->|DeliveryCount &gt; 5| DLQ
+  Users -.->|install event| AzBot
+  AzBot -.->|POST /api/messages| GW
+  Secret -.-> API
+  Secret -.-> WK
+  Secret -.->|TriggerAuthentication| SB
+  ACR -.->|imagens| API
+  ACR -.->|imagens| WK
+  API -.->|logs| Logs
+  WK -.->|logs| Logs
+        </pre>
+      </div>
+      <div class="legend">
+        <span><span class="dot b-azure"></span>Linha cheia = caminho de dados</span>
+        <span><span class="dot b-amber"></span>Tracejado = control plane / suporte</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · RECURSOS AZURE -->
+  <section class="slide" data-title="Componentes / Recursos Azure">
+    <div class="slide-inner">
+      <span class="eyebrow">Recursos</span>
+      <h2>Componentes Azure</h2>
+      <table>
+        <thead><tr><th>Recurso</th><th>Nome (demo)</th><th>SKU</th><th>Função</th></tr></thead>
+        <tbody>
+          <tr><td><b>App Registration</b></td><td>do Azure Bot</td><td>Free</td><td>Identidade do bot (SingleTenant)</td></tr>
+          <tr><td><b>Azure Bot</b></td><td class="mono">bot-…</td><td>F0</td><td>Registro Bot Framework + canal Teams</td></tr>
+          <tr><td><b>AKS</b></td><td class="mono">aks-…</td><td>Free control plane</td><td>Nodes <span class="mono">Standard_D2ds_v5</span> ×2, OS disk efêmero</td></tr>
+          <tr><td><b>Add-on KEDA</b></td><td>nativo</td><td>—</td><td>Escala worker pela profundidade da fila Service Bus</td></tr>
+          <tr><td><b>Add-on Istio</b></td><td>mesh + ingress</td><td>—</td><td>Service mesh + Gateway externo (ingress)</td></tr>
+          <tr><td><b>Gateway API CRDs</b></td><td>v1.2.0</td><td>—</td><td>Padrão K8s (substitui Ingress)</td></tr>
+          <tr><td><b>cert-manager</b></td><td>v1.20.2</td><td>—</td><td>Let's Encrypt via <span class="mono">gatewayHTTPRoute</span></td></tr>
+          <tr><td><b>Storage Account</b></td><td class="mono">sttmd…</td><td>Standard_LRS</td><td>Table <span class="mono">conversationrefs</span> (refs duráveis)</td></tr>
+          <tr><td><b>Service Bus</b></td><td class="mono">sb-tmd…</td><td>Standard</td><td>Fila <span class="mono">send-messages</span> (dedup nativa + DLQ)</td></tr>
+          <tr><td><b>Azure Managed Redis</b></td><td class="mono">redis-tmd…</td><td>Balanced_B0</td><td>TLS porta 10000; counters, índice de refs, cache e token bucket</td></tr>
+          <tr><td><b>Container Registry</b></td><td>compartilhado</td><td>Basic</td><td>Imagens API + Worker (RG externo; kubelet com AcrPull)</td></tr>
+          <tr><td><b>Log Analytics</b></td><td class="mono">log-…</td><td>PerGB2018 · cap 25MB/dia</td><td>Container Insights do AKS</td></tr>
+          <tr><td><b>K8s Secret</b></td><td class="mono">teams-msgs-secrets</td><td>—</td><td>Connection strings de Storage, Service Bus e Redis</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 7 · DIFF vs TS -->
+  <section class="slide" data-title="Diferenças vs versão TypeScript">
+    <div class="slide-inner">
+      <span class="eyebrow">Port .NET</span>
+      <h2>Mesmo data plane da referência TS; hospedagem em AKS</h2>
+      <table>
+        <thead><tr><th>Camada</th><th>teams_msgs (TS)</th><th>teams_msgs_dotnet</th></tr></thead>
+        <tbody>
+          <tr><td><b>Runtime</b></td><td>Node 20 + TypeScript</td><td>.NET 8 LTS (Minimal API + Worker)</td></tr>
+          <tr><td><b>Fila</b></td><td>Service Bus</td><td><b>Service Bus Standard</b> · queue <span class="mono">send-messages</span></td></tr>
+          <tr><td><b>Cache / counters / rate-limit</b></td><td>Redis (HMSET/HINCRBY/Lua)</td><td><b>Azure Managed Redis</b> (HMSET/HINCRBY/Lua)</td></tr>
+          <tr><td><b>Compute</b></td><td>Container Apps + KEDA</td><td>AKS + KEDA <span class="mono">azure-servicebus</span> + HPA CPU</td></tr>
+          <tr><td><b>Ingress</b></td><td>ACA built-in</td><td>Istio Gateway + cert-manager + Let's Encrypt</td></tr>
+          <tr><td><b>Auth aos serviços</b></td><td>Connection string</td><td>Connection string em K8s Secret</td></tr>
+          <tr><td><b>Idempotência</b></td><td><span class="mono">messageId</span> dedup (SB)</td><td><span class="mono">messageId</span> dedup nativa (igual)</td></tr>
+          <tr><td><b>DLQ</b></td><td>SB DLQ automática</td><td>SB DLQ automática por <span class="mono">maxDeliveryCount=5</span></td></tr>
+          <tr><td><b>Limite por msg</b></td><td>256 KB</td><td>256 KB (Service Bus Standard)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 8 · IaC BICEP -->
+  <section class="slide" data-title="IaC — Bicep">
+    <div class="slide-inner">
+      <span class="eyebrow">Infrastructure as Code</span>
+      <h2>Bicep subscription-scope: orquestrador + 7 módulos</h2>
+      <div class="grid g2">
+        <div>
+          <div class="diagram">
+            <pre class="mermaid">
+flowchart TD
+  SUB["az deployment sub create<br/>main.bicep (subscription)"]
+  RG["resourceGroup rg-tmd-poc"]
+  SUB --> RG
+  RG --> ST["storage.bicep<br/>conversationrefs"]
+  RG --> LOG["loganalytics.bicep"]
+  RG --> SB["servicebus.bicep<br/>Standard + dedup + DLQ"]
+  RG --> REDIS["redis.bicep<br/>Managed Redis Balanced_B0"]
+  RG --> AKS["aks.bicep<br/>KEDA + Istio"]
+  AKS --> ACR["acr-rbac.bicep<br/>(AcrPull no RG externo)"]
+  RG --> BOT["bot.bicep (opcional)"]
+  ST --> OUT["secure outputs"]
+  SB --> OUT
+  REDIS --> OUT
+  OUT --> HELM["values-poc.yaml / K8s Secret"]
+            </pre>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <h3>Princípios</h3>
+            <ul class="check">
+              <li><b>targetScope = subscription</b>: cria o RG e chama todos os módulos</li>
+              <li>Naming por <b>CAF abbreviations</b> (<span class="mono">rg-/st/log-/aks-/sb-/redis-/bot-</span>)</li>
+              <li><b>ACR cross-RG</b>: <span class="mono">acr-rbac.bicep</span> dá <span class="mono">AcrPull</span> ao kubelet em RG externo</li>
+              <li><b>bot.bicep</b> condicional: só roda se <span class="mono">botMsaAppId</span> for fornecido</li>
+              <li>Outputs seguros alimentam as connection strings do <span class="mono">Secret</span> via Helm</li>
+            </ul>
+          </div>
+          <pre class="code" style="margin-top:14px"><span class="c">// main.bicep — orquestração</span>
+<span class="k">targetScope</span> = <span class="s">'subscription'</span>
+<span class="k">resource</span> rg <span class="s">'…/resourceGroups@2023-07-01'</span> = { … }
+<span class="k">module</span> storage    <span class="s">'modules/storage.bicep'</span>      = { scope: rg … }
+<span class="k">module</span> log        <span class="s">'modules/loganalytics.bicep'</span> = { scope: rg … }
+<span class="k">module</span> serviceBus <span class="s">'modules/servicebus.bicep'</span>   = { scope: rg … }
+<span class="k">module</span> redis      <span class="s">'modules/redis.bicep'</span>        = { scope: rg … }
+<span class="k">module</span> aks        <span class="s">'modules/aks.bicep'</span>          = { scope: rg … }
+<span class="k">module</span> acrRbac    <span class="s">'modules/acr-rbac.bicep'</span>     = { scope: resourceGroup(sharedAcrResourceGroup) … }
+<span class="k">module</span> bot        <span class="s">'modules/bot.bicep'</span> = <span class="k">if</span> (!empty(botMsaAppId)) { … }</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · CONNECTION STRINGS -->
+  <section class="slide" data-title="Connection strings & Secret">
+    <div class="slide-inner">
+      <span class="eyebrow">Autenticação</span>
+      <h2>Connection strings em K8s Secret (Workload Identity removido)</h2>
+      <div class="grid g2">
+        <div class="diagram">
+          <pre class="mermaid">
+flowchart LR
+  Secret["K8s Secret teams-msgs-secrets"]
+  API["SA teams-msgs-api"]
+  Worker["SA teams-msgs-worker"]
+  KEDA["keda-operator TriggerAuthentication"]
+  ST[("Storage Table conversationrefs")]
+  SB[("Service Bus send-messages")]
+  Redis[("Azure Managed Redis")]
+  ACR[("ACR compartilhado")]
+  Kubelet["AKS kubelet identity"]
+
+  Secret -->|Storage__ConnectionString| API
+  Secret -->|ServiceBus__ConnectionString| API
+  Secret -->|Redis__ConnectionString| API
+  Secret -->|Storage__ConnectionString| Worker
+  Secret -->|ServiceBus__ConnectionString| Worker
+  Secret -->|Redis__ConnectionString| Worker
+  Secret -->|ServiceBus__ConnectionString| KEDA
+  API --> ST
+  API --> SB
+  API --> Redis
+  Worker --> ST
+  Worker --> SB
+  Worker --> Redis
+  Kubelet -->|AcrPull| ACR
+          </pre>
+        </div>
+        <div>
+          <h3>Secret keys</h3>
+          <table style="margin-bottom:14px">
+            <thead><tr><th>Key</th><th>Consumidor</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">Storage__ConnectionString</td><td>API + Worker (Table <span class="mono">conversationrefs</span>)</td></tr>
+              <tr><td class="mono">ServiceBus__ConnectionString</td><td>Producer, consumer e KEDA <span class="mono">TriggerAuthentication</span></td></tr>
+              <tr><td class="mono">Redis__ConnectionString</td><td>RedisJobTracker, índice de refs, cache e token bucket</td></tr>
+            </tbody>
+          </table>
+          <h3>RBAC restante</h3>
+          <table>
+            <thead><tr><th>Identidade</th><th>Role</th><th>Scope</th></tr></thead>
+            <tbody>
+              <tr><td>AKS kubelet identity</td><td>AcrPull</td><td>ACR compartilhado</td></tr>
+            </tbody>
+          </table>
+          <div class="note" style="margin-top:14px">Sem RBAC de data plane: Storage, Service Bus e Redis usam as connection strings geradas pelo Bicep e montadas pelo Helm.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 · DATA PLANE -->
+  <section class="slide" data-title="Data plane — Table + Redis + Service Bus">
+    <div class="slide-inner">
+      <span class="eyebrow">Dados</span>
+      <h2>Table refs + Redis no caminho quente + Service Bus para fan-out</h2>
+      <table>
+        <thead><tr><th>Componente</th><th>Estrutura</th><th>Operação</th><th>Conteúdo</th><th>Observação</th></tr></thead>
+        <tbody>
+          <tr><td class="mono"><b>conversationrefs</b></td><td>Table Storage</td><td class="mono">Upsert / Stream / Delete</td><td><span class="mono">refJson</span> (ConversationReference)</td><td>Fonte de verdade durável</td></tr>
+          <tr><td class="mono"><b>job:{id}</b></td><td>Redis hash</td><td class="mono">HMSET + HINCRBY</td><td>total, sent, failed, status, payload, errors</td><td>TTL 24h; status derivado</td></tr>
+          <tr><td class="mono"><b>refs:active</b></td><td>Redis set</td><td class="mono">SADD / SREM / SCARD</td><td>RowKeys ativos</td><td>Contagem O(1) para <span class="mono">/api/status</span></td></tr>
+          <tr><td class="mono"><b>message cache</b></td><td>Redis hash + L1</td><td class="mono">HGETALL + IMemoryCache</td><td>Mensagem resolvida</td><td>L1 local de 5 min no worker</td></tr>
+          <tr><td class="mono"><b>send-messages</b></td><td>Service Bus queue</td><td class="mono">EnqueueBatch / PeekLock</td><td>QueueMessageBody + messageId</td><td>Dedup e DLQ nativas</td></tr>
+        </tbody>
+      </table>
+      <div class="grid g3" style="margin-top:18px">
+        <div class="card flat"><h3>Streaming</h3><p>Refs lidas via <span class="mono">IAsyncEnumerable</span> — não materializa array na memória.</p></div>
+        <div class="card flat"><h3>Service Bus</h3><p><span class="mono">send-messages</span> (256KB/msg, batches com buffer 500, receive até 32) em PeekLock.</p></div>
+        <div class="card flat"><h3>Status derivado</h3><p><span class="mono">completed</span> = <span class="mono">(sent+failed) ≥ total</span>, com counters atômicos no Redis.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 · REDIS COUNTERS -->
+  <section class="slide" data-title="Counters no Redis">
+    <div class="slide-inner">
+      <span class="eyebrow">Resiliência</span>
+      <h2>Counters no Redis: HINCRBY atômico (O(1))</h2>
+      <div class="grid g2">
+        <div>
+          <p class="lead">O progresso do job fica no hash <span class="mono">job:{id}</span>. Cada worker faz <span class="mono">HINCRBY</span> no servidor Redis, sem read-modify-write concorrente e sem entidade quente.</p>
+          <div class="diagram" style="margin-top:8px">
+            <pre class="mermaid">
+flowchart LR
+  WA["Worker A"] -->|HINCRBY sent| JOB[("Redis hash job:{id}")]
+  WB["Worker B"] -->|HINCRBY failed| JOB
+  WN["Worker N"] -->|HINCRBY sent| JOB
+  API["GET /api/jobs/{id}"] -->|HGETALL| JOB
+  JOB --> STATUS["status derivado<br/>(sent+failed) ≥ total"]
+  JOB --> CACHE["payload da mensagem<br/>message/messageType"]
+            </pre>
+          </div>
+        </div>
+        <div>
+          <pre class="code"><span class="c">// RedisJobTracker — incremento atômico</span>
+<span class="k">await</span> db.HashIncrementAsync($<span class="s">"job:{jobId}"</span>, field, <span class="n">1</span>);
+
+<span class="c">// leitura: uma consulta ao hash</span>
+<span class="k">var</span> values = <span class="k">await</span> db.HashGetAllAsync($<span class="s">"job:{jobId}"</span>);
+<span class="k">var</span> completed = (sent + failed) &gt;= total;
+<span class="k">var</span> status = completed ? <span class="s">"completed"</span> : <span class="s">"processing"</span>;</pre>
+          <div class="note ok" style="margin-top:14px">
+            O Redis também guarda o payload do comunicado e expira o hash em 24h. O worker usa <span class="mono">IMemoryCache</span> local por 5 min para reduzir leituras repetidas.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 · IDEMPOTÊNCIA -->
+  <section class="slide" data-title="Idempotência — Service Bus dedup">
+    <div class="slide-inner">
+      <span class="eyebrow">Resiliência</span>
+      <h2>Idempotência: dedup nativa do Service Bus</h2>
+      <div class="grid g2">
+        <div>
+          <p class="lead">Cada mensagem recebe um <span class="mono">messageId</span> determinístico: <span class="mono">{jobId}:{md5hex(rowKey)}:{repeat}</span>. A fila Standard tem <span class="mono">requiresDuplicateDetection=true</span>, então duplicatas dentro da janela são descartadas pelo broker.</p>
+          <ul class="check">
+            <li><span class="mono">messageId</span> estável por job, usuário e repetição</li>
+            <li>Sem escrita extra por mensagem no caminho quente</li>
+            <li>Produtor usa <span class="mono">EnqueueBatchAsync</span> e <span class="mono">ServiceBusMessageBatch</span></li>
+            <li>Consumidor usa PeekLock: <span class="mono">Complete</span> no sucesso/permanente; <span class="mono">Abandon</span> no transiente</li>
+          </ul>
+        </div>
+        <div>
+          <pre class="code"><span class="c">// ServiceBusSendQueue.BuildMessage</span>
+<span class="k">return</span> <span class="k">new</span> ServiceBusMessage(json)
+{
+  ContentType = <span class="s">"application/json"</span>,
+  MessageId = ServiceBusMessageId.Compute(
+      body.JobId, body.RowKey, body.RepeatIndex)
+};
+
+<span class="c">// formato</span>
+<span class="s">"{jobId}:{md5hex(rowKey)}:{repeatIndex}"</span></pre>
+          <div class="note" style="margin-top:14px"><b>DLQ nativa:</b> a fila usa <span class="mono">maxDeliveryCount=5</span> e <span class="mono">lockDuration=PT5M</span>; ao exceder o limite, o Service Bus move para <span class="mono">$DeadLetterQueue</span>.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13 · RATE LIMIT -->
+  <section class="slide" data-title="Rate limit — Redis">
+    <div class="slide-inner">
+      <span class="eyebrow">Controle de vazão</span>
+      <h2>Rate limit global: token bucket Redis (Lua)</h2>
+      <div class="grid g2">
+        <div>
+          <p class="lead">O worker adquire 1 token no Redis antes de cada <span class="mono">ContinueConversationAsync</span>. Como todos os pods usam a mesma chave, o limite é <b>global</b>, não por réplica.</p>
+          <table>
+            <thead><tr><th>values.yaml</th><th>Default</th><th>Significado</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">rateLimit.enabled</td><td>true</td><td>Liga/desliga o bucket</td></tr>
+              <tr><td class="mono">capacity</td><td>50</td><td>Burst máximo global</td></tr>
+              <tr><td class="mono">ratePerSec</td><td>50</td><td>Recarga por segundo</td></tr>
+              <tr><td class="mono">key</td><td>ratelimit:bot</td><td>Bucket compartilhado</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <pre class="code"><span class="c">-- TOKEN_BUCKET_LUA (resumo)</span>
+<span class="k">local</span> capacity = tonumber(ARGV[<span class="n">1</span>])
+<span class="k">local</span> rate = tonumber(ARGV[<span class="n">2</span>])
+<span class="k">local</span> elapsed = math.max(<span class="n">0</span>, now_ms - last) / <span class="n">1000.0</span>
+<span class="k">local</span> tokens = math.min(capacity, stored + elapsed * rate)
+<span class="k">if</span> tokens &gt;= <span class="n">1</span> <span class="k">then</span>
+  tokens = tokens - <span class="n">1</span>
+  allowed = <span class="n">1</span>
+<span class="k">end</span>
+redis.call(<span class="s">'HSET'</span>, KEYS[<span class="n">1</span>], <span class="s">'tokens'</span>, tokens, <span class="s">'ts'</span>, now_ms)</pre>
+          <div class="note ok" style="margin-top:14px"><b>Resultado:</b> o teto observado no teste 50k ficou no cap configurado (~52,5 msg/s), mesmo com KEDA escalando até 10 workers.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 14 · SEGURANÇA -->
+  <section class="slide" data-title="Segurança">
+    <div class="slide-inner">
+      <span class="eyebrow">Segurança</span>
+      <h2>Connection strings em Secret, TLS gerenciado, auth de tempo constante</h2>
+      <div class="grid g2">
+        <div class="card">
+          <h3>Identidade &amp; rede</h3>
+          <ul class="check">
+            <li><b>Connection strings</b>: Storage, Service Bus e Redis vêm do <span class="mono">Secret</span> do Kubernetes</li>
+            <li><b>TLS</b> terminado no Istio Gateway com cert Let's Encrypt (auto-renew via cert-manager)</li>
+            <li>Secrets sensíveis em <span class="mono">Secret</span> do K8s — recomendado Key Vault + CSI em prod</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>API auth</h3>
+          <ul class="check">
+            <li><span class="mono">/api/send</span>, <span class="mono">/api/jobs</span>, <span class="mono">/api/status</span> exigem header <span class="mono">x-api-key</span></li>
+            <li>Comparação com <span class="mono">CryptographicOperations.FixedTimeEquals</span> (timing-safe)</li>
+            <li><span class="mono">/api/messages</span> protegido pelo token do próprio Bot Framework (JWT)</li>
+            <li>Dev local: <span class="mono">Api:ApiKey</span> vazia desliga a checagem (warning no log)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note" style="margin-top:18px">O único role assignment criado pela IaC é <b>AcrPull</b> para o kubelet no ACR compartilhado. O acesso data-plane aos serviços usa as connection strings do <span class="mono">teams-msgs-secrets</span>.</div>
+    </div>
+  </section>
+
+  <!-- 15 · CONFIGURAÇÃO -->
+  <section class="slide" data-title="Configuração">
+    <div class="slide-inner">
+      <span class="eyebrow">Configuração</span>
+      <h2>Options tipadas + Helm values</h2>
+      <div class="grid g2">
+        <div>
+          <h3>Options (appsettings / env)</h3>
+          <table>
+            <thead><tr><th>Seção</th><th>Chaves principais</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">Storage</td><td>ConnectionString · RefsTableName=<span class="mono">conversationrefs</span></td></tr>
+              <tr><td class="mono">ServiceBus</td><td>ConnectionString · QueueName=<span class="mono">send-messages</span> · MaxDeliveryCount=5</td></tr>
+              <tr><td class="mono">Redis</td><td>ConnectionString (host:10000,password=&lt;key&gt;,ssl=True,abortConnect=False)</td></tr>
+              <tr><td class="mono">RateLimit</td><td>Enabled · Capacity=50 · RatePerSec=50 · Key=<span class="mono">ratelimit:bot</span></td></tr>
+              <tr><td class="mono">Bot</td><td>AppId · AppPassword · TenantId</td></tr>
+              <tr><td class="mono">Api</td><td>ApiKey · SendFlushConcurrency=5</td></tr>
+              <tr><td class="mono">Worker</td><td>MaxConcurrent=10 · PollBatchSize=32 · VisibilityTimeout=5min · MessageCacheTtl=5min · SendTimeout=20s</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:10px">Dev e prod usam as mesmas seções; em AKS os valores sensíveis vêm do <span class="mono">Secret</span> criado pelo Helm.</p>
+        </div>
+        <div>
+          <h3>Helm values.yaml (destaques)</h3>
+          <pre class="code">storage:
+  connectionString: <span class="s">"&lt;storage-conn&gt;"</span>
+  refsTableName: conversationrefs
+serviceBus:
+  connectionString: <span class="s">"&lt;servicebus-conn&gt;"</span>
+  queueName: send-messages
+  maxDeliveryCount: <span class="n">5</span>
+redis:
+  connectionString: <span class="s">"&lt;redis-host:10000,password=...&gt;"</span>
+rateLimit: { enabled: <span class="n">true</span>, capacity: <span class="n">50</span>, ratePerSec: <span class="n">50</span>, key: <span class="s">"ratelimit:bot"</span> }
+api:
+  hpa: { minReplicas: <span class="n">1</span>, maxReplicas: <span class="n">5</span>, targetCpuUtilizationPercentage: <span class="n">70</span> }
+worker:
+  keda: { minReplicaCount: <span class="n">0</span>, maxReplicaCount: <span class="n">10</span>, queueLength: <span class="s">"20"</span> }
+istio: { enabled: <span class="n">true</span>, injectionLabel: enabled }</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 16 · ENDPOINTS -->
+  <section class="slide" data-title="Endpoints da API">
+    <div class="slide-inner">
+      <span class="eyebrow">API</span>
+      <h2>Endpoints</h2>
+      <table>
+        <thead><tr><th>Método</th><th>Path</th><th>Auth</th><th>Descrição</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag t-post">POST</span></td><td class="mono">/api/messages</td><td><span class="tag t-none">Bot JWT</span></td><td>Endpoint do Bot Framework (Messaging Endpoint)</td></tr>
+          <tr><td><span class="tag t-post">POST</span></td><td class="mono">/api/send</td><td><span class="tag t-none">x-api-key</span></td><td>Enfileira N mensagens no Service Bus em batches → <b>202 Accepted</b></td></tr>
+          <tr><td><span class="tag t-get">GET</span></td><td class="mono">/api/jobs/{id}</td><td><span class="tag t-none">x-api-key</span></td><td>Progresso do job (sent/failed/status) via Redis</td></tr>
+          <tr><td><span class="tag t-get">GET</span></td><td class="mono">/api/status</td><td><span class="tag t-none">x-api-key</span></td><td>Contagem de usuários registrados via Redis SCARD</td></tr>
+          <tr><td><span class="tag t-get">GET</span></td><td class="mono">/healthz</td><td>—</td><td>Liveness</td></tr>
+          <tr><td><span class="tag t-get">GET</span></td><td class="mono">/readyz</td><td>—</td><td>Readiness (Redis + Table Storage + Service Bus)</td></tr>
+        </tbody>
+      </table>
+      <div class="grid g2" style="margin-top:16px">
+        <pre class="code"><span class="c">// POST /api/send — texto</span>
+{ <span class="k">"message"</span>: <span class="s">"📢 Comunicado importante!"</span>, <span class="k">"repeat"</span>: <span class="n">1</span> }</pre>
+        <pre class="code"><span class="c">// 202 Accepted</span>
+{ <span class="k">"jobId"</span>: <span class="s">"fde4…7e2"</span>, <span class="k">"total"</span>: <span class="n">1</span>,
+  <span class="k">"status"</span>: <span class="s">"queued"</span>, <span class="k">"statusUrl"</span>: <span class="s">"/api/jobs/fde4…7e2"</span> }</pre>
+      </div>
+      <p style="margin-top:10px"><span class="mono">message</span> aceita <b>texto</b> ou <span class="mono">{ type:"AdaptiveCard", content:&lt;card&gt; }</span>. <span class="mono">repeat</span> multiplica refs × repeat (útil para load test).</p>
+    </div>
+  </section>
+
+  <!-- 17 · FLUXO FASE 1 -->
+  <section class="slide" data-title="Fluxo — Fase 1: Registro">
+    <div class="slide-inner">
+      <span class="eyebrow">Fluxo de execução · 1/3</span>
+      <h2>Fase 1 — Registro de usuários (passivo)</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant Admin as Teams Admin
+  participant Teams as Microsoft Teams
+  participant AzBot as Azure Bot
+  participant GW as Istio Gateway
+  participant API as teams-msgs-api
+  participant Table as Table conversationrefs
+  participant Redis as Redis refs:active
+  Admin->>Teams: Deploy do app (org-wide)
+  loop para cada usuário
+    Teams->>AzBot: conversationUpdate / install
+    AzBot->>GW: POST /api/messages
+    GW->>API: HTTP (TLS termina aqui)
+    API->>API: extrai conversationReference
+    API->>Table: UpsertEntity (PartitionKey refs)
+    API->>Redis: SADD refs:active rowKey
+  end
+  Note over Table,Redis: Table é a fonte durável; Redis mantém índice/contagem O(1)
+        </pre>
+      </div>
+      <p>O registro é <b>passivo</b>: nenhum disparo acontece aqui. O bot apenas captura e persiste uma referência de conversa por usuário que tem o app instalado.</p>
+    </div>
+  </section>
+
+  <!-- 18 · FLUXO FASE 2 -->
+  <section class="slide" data-title="Fluxo — Fase 2: Disparo">
+    <div class="slide-inner">
+      <span class="eyebrow">Fluxo de execução · 2/3</span>
+      <h2>Fase 2 — Disparo do comunicado</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant Client as App chamadora
+  participant API as teams-msgs-api
+  participant Refs as Table conversationrefs
+  participant Redis as Redis (job + bucket)
+  participant SB as Service Bus
+  participant Worker as Worker (KEDA 0..N)
+  participant Bot as Bot Framework
+  Client->>API: POST /api/send (x-api-key)
+  API->>API: MessageValidator.Validate()
+  API->>Redis: HMSET job (status=queued, total=0, payload)
+  API->>Refs: StreamAsync (IAsyncEnumerable)
+  loop buffer 500 refs
+    API->>SB: EnqueueBatchAsync (ServiceBusMessageBatch)<br/>messageId determinístico
+  end
+  API->>Redis: UpdateTotalAsync + status=processing
+  API-->>Client: 202 {jobId, statusUrl}
+  Note over SB,Worker: KEDA azure-servicebus detecta queueLength e escala 0..10
+  par workers em paralelo
+    Worker->>SB: ReceiveMessages PeekLock (batch &lt;=32)
+    Worker->>Redis: GetMessageAsync (cache local 5min)
+    Worker->>Redis: Acquire token (Lua bucket global)
+    Worker->>Bot: ContinueConversationAsync
+    Bot-->>Worker: 200 / 403 / 410 / 429 / 5xx
+    alt 200 OK
+      Worker->>Redis: IncrementSent (HINCRBY)
+      Worker->>SB: Complete
+    else 403/410 ou 4xx permanente
+      Worker->>Refs: DeleteEntity se ref inválida
+      Worker->>Redis: IncrementFailed
+      Worker->>SB: Complete
+    else transiente após retries
+      Worker->>SB: Abandon para reentrega
+    end
+  end
+  Client->>API: GET /api/jobs/{id}
+  API->>Redis: HGETALL job
+  API-->>Client: {progress, sent, failed, status}
+        </pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 19 · FLUXO FASE 3 -->
+  <section class="slide" data-title="Fluxo — Fase 3: Erros">
+    <div class="slide-inner">
+      <span class="eyebrow">Fluxo de execução · 3/3</span>
+      <h2>Fase 3 — Tratamento de erros</h2>
+      <div class="grid g2">
+        <div class="diagram">
+          <pre class="mermaid">
+flowchart TD
+  A["Worker recebe msg PeekLock"] --> B{"Acquire token Redis"}
+  B --> C{"ContinueConversation"}
+  C -->|200| D["HINCRBY sent + Complete"]
+  C -->|429| E["Sleep Retry-After"] --> C
+  C -->|5xx| F["Backoff exponencial"] --> C
+  C -->|403/410| G["Remove ref + HINCRBY failed + Complete"]
+  C -->|4xx outro| H["HINCRBY failed + Complete"]
+  C -->|TaskCanceled/timeout| F
+  C -->|transiente após retries| I["Abandon · broker reentrega"]
+  I --> J{"DeliveryCount > max?"}
+  J -->|não| A
+  J -->|sim| K["DLQ nativa $DeadLetterQueue"]
+          </pre>
+        </div>
+        <div>
+          <h3>Classificação de outcomes (SendWithRetry)</h3>
+          <table>
+            <thead><tr><th>Status</th><th>Ação</th></tr></thead>
+            <tbody>
+              <tr><td><b>200</b></td><td><span style="color:var(--green)">IncrementSent</span> + Complete</td></tr>
+              <tr><td><b>429</b></td><td>Retry-After / backoff, até N</td></tr>
+              <tr><td><b>5xx</b></td><td>Backoff exponencial, até N</td></tr>
+              <tr><td><b>403 / 410</b></td><td><span style="color:var(--amber)">Remove ref</span> + IncrementFailed (permanente)</td></tr>
+              <tr><td><b>4xx outro</b></td><td>IncrementFailed (permanente)</td></tr>
+              <tr><td><b>transiente</b></td><td><span style="color:var(--red)">Abandon</span> → reentrega pelo Service Bus</td></tr>
+            </tbody>
+          </table>
+          <div class="note danger" style="margin-top:12px"><b>DLQ:</b> após <span class="mono">maxDeliveryCount=5</span>, o broker move a mensagem para a subfila <span class="mono">$DeadLetterQueue</span>.</div>
+          <ul class="check" style="margin-top:12px">
+            <li><span class="mono">BotHttpStatus</span> extrai o status real de <span class="mono">ErrorResponseException.Response.StatusCode</span></li>
+            <li><span class="mono">TaskCanceledException</span> de timeout é transiente; shutdown real ainda propaga</li>
+            <li><span class="mono">BotConnectorHttpClientFactory</span> aplica timeout curto de 20s ao conector</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 20 · CLASS DIAGRAM -->
+  <section class="slide" data-title="Diagrama de classes">
+    <div class="slide-inner">
+      <span class="eyebrow">Código</span>
+      <h2>Diagrama de classes (TeamsMsgs.Shared / Api / Worker)</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+classDiagram
+  direction LR
+  class IConversationRefStore {
+    &lt;&lt;interface&gt;&gt;
+    +SaveAsync()
+    +StreamAsync() IAsyncEnumerable
+    +RemoveByRowKeyAsync()
+    +CountAsync()
+  }
+  class IJobTracker {
+    &lt;&lt;interface&gt;&gt;
+    +CreateAsync()
+    +UpdateTotalAsync()
+    +IncrementSentAsync()
+    +IncrementFailedAsync()
+    +GetAsync() JobStatus
+    +GetMessageAsync()
+  }
+  class IRateLimiter {
+    &lt;&lt;interface&gt;&gt;
+    +TryAcquireAsync() bool
+    +AcquireAsync()
+  }
+  class ISendQueue {
+    &lt;&lt;interface&gt;&gt;
+    +EnqueueBatchAsync()
+    +EnqueueAsync()
+    +PingAsync()
+  }
+  class ISendQueueReceiver {
+    &lt;&lt;interface&gt;&gt;
+    +ReceiveAsync()
+    +CompleteAsync()
+    +AbandonAsync()
+    +DeadLetterAsync()
+  }
+  class AzureClientFactory {
+    +CreateTableClient()
+  }
+  class RedisConnection {
+    +Database
+  }
+  class RedisJobTracker
+  class RedisTokenBucket
+  class ConversationRefStore
+  class ServiceBusSendQueue
+  class ServiceBusSendQueueReceiver
+  class ServiceBusMessageId
+  class SendEndpoint {
+    &lt;&lt;static&gt;&gt;
+    +HandleAsync()
+  }
+  class QueueConsumerService {
+    +ExecuteAsync()
+    +ProcessAsync()
+  }
+  class SendWithRetry {
+    &lt;&lt;static&gt;&gt;
+    +ExecuteAsync() SendOutcome
+  }
+  class BotHttpStatus
+  class BotConnectorHttpClientFactory
+  class MessageValidator {
+    &lt;&lt;static&gt;&gt;
+    +Validate() MessageValidationResult
+  }
+  IConversationRefStore &lt;|.. ConversationRefStore
+  IJobTracker &lt;|.. RedisJobTracker
+  IRateLimiter &lt;|.. RedisTokenBucket
+  ISendQueue &lt;|.. ServiceBusSendQueue
+  ISendQueueReceiver &lt;|.. ServiceBusSendQueueReceiver
+  ConversationRefStore --> AzureClientFactory
+  ConversationRefStore --> RedisConnection
+  RedisJobTracker --> RedisConnection
+  RedisTokenBucket --> RedisConnection
+  ServiceBusSendQueue --> ServiceBusMessageId
+  SendEndpoint ..> IConversationRefStore
+  SendEndpoint ..> IJobTracker
+  SendEndpoint ..> ISendQueue
+  SendEndpoint ..> MessageValidator
+  QueueConsumerService ..> ISendQueueReceiver
+  QueueConsumerService ..> IJobTracker
+  QueueConsumerService ..> IRateLimiter
+  QueueConsumerService ..> IConversationRefStore
+  QueueConsumerService ..> SendWithRetry
+  SendWithRetry ..> BotHttpStatus
+  QueueConsumerService ..> BotConnectorHttpClientFactory
+        </pre>
+      </div>
+      <div class="legend">
+        <span><span class="dot b-azure"></span>◁┄ realização (interface → impl)</span>
+        <span><span class="dot b-amber"></span>──▷ associação / dependência</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 21 · CLASS SEQUENCE -->
+  <section class="slide" data-title="Sequência das classes">
+    <div class="slide-inner">
+      <span class="eyebrow">Código</span>
+      <h2>Diagrama de sequência das classes (runtime)</h2>
+      <div class="diagram">
+        <pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor Client
+  participant SE as SendEndpoint
+  participant MV as MessageValidator
+  participant RS as IConversationRefStore
+  participant JT as IJobTracker
+  participant Q as ISendQueue
+  participant QC as QueueConsumerService
+  participant QR as ISendQueueReceiver
+  participant RL as IRateLimiter
+  participant SR as SendWithRetry
+  participant CA as CloudAdapter
+  Client->>SE: POST /api/send
+  SE->>MV: Validate(message)
+  SE->>JT: CreateAsync(jobId, total 0, payload)
+  loop buffers de refs
+    SE->>RS: StreamAsync()
+    SE->>Q: EnqueueBatchAsync(QueueMessageBody[])
+  end
+  SE->>JT: UpdateTotalAsync(total)
+  SE-->>Client: 202 {jobId}
+  Note over QR,QC: KEDA escala worker 0..10 via Service Bus
+  QC->>QR: ReceiveAsync(batch &lt;=32, PeekLock)
+  QC->>JT: GetMessageAsync (Redis + cache 5min)
+  QC->>RL: AcquireAsync (token bucket global)
+  QC->>SR: ExecuteAsync(send)
+  SR->>CA: ContinueConversationAsync(ref)
+  alt 200 OK
+    QC->>JT: IncrementSentAsync (HINCRBY)
+    QC->>QR: CompleteAsync
+  else 403/410
+    QC->>RS: RemoveByRowKeyAsync
+    QC->>JT: IncrementFailedAsync
+    QC->>QR: CompleteAsync
+  else 4xx permanente
+    QC->>JT: IncrementFailedAsync
+    QC->>QR: CompleteAsync
+  else transiente após retries
+    QC->>QR: AbandonAsync
+  end
+        </pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 22 · ESTRUTURA -->
+  <section class="slide" data-title="Estrutura do projeto">
+    <div class="slide-inner">
+      <span class="eyebrow">Repositório</span>
+      <h2>Estrutura do projeto</h2>
+      <div class="grid g2">
+        <pre class="code">teams_msgs_dotnet/
+├─ <span class="k">src/</span>
+│  ├─ TeamsMsgs.Api/       <span class="c"># Minimal API</span>
+│  │  ├─ Program.cs · Endpoints/ · Auth/ · Bot/
+│  ├─ TeamsMsgs.Worker/    <span class="c"># BackgroundService</span>
+│  │  └─ Hosting/QueueConsumerService.cs · BotHttpStatus.cs
+│  └─ TeamsMsgs.Shared/    <span class="c"># lib compartilhada</span>
+│     ├─ Validation/ · Configuration/ · Azure/
+│     ├─ Storage/ConversationRefStore.cs  <span class="c"># Table + Redis SCARD</span>
+│     ├─ Jobs/RedisJobTracker.cs          <span class="c"># HINCRBY + cache</span>
+│     ├─ Messaging/ServiceBusSendQueue*.cs
+│     ├─ Messaging/ServiceBusMessageId.cs
+│     ├─ RateLimiting/RedisTokenBucket.cs
+│     └─ Sending/SendWithRetry.cs
+├─ <span class="k">tests/</span>TeamsMsgs.Tests/  <span class="c"># 38 xUnit</span></pre>
+        <pre class="code">├─ <span class="k">deploy/</span>
+│  ├─ bicep/main.bicep + modules/ (7)
+│  │  └─ storage · log · servicebus · redis · aks · acr-rbac · bot
+│  ├─ helm/teams-msgs/ (api,worker,keda,secret,…)
+│  ├─ istio-gateway.yaml · istio-cert.yaml
+│  └─ clusterissuer-gw.yaml
+├─ <span class="k">docker/</span> Dockerfile.api · Dockerfile.worker
+├─ <span class="k">manifest/</span> manifest.json · build.ps1
+├─ <span class="k">load_test/</span> run-50k.js
+├─ <span class="k">.github/workflows/</span> ci.yml · cd.yml
+├─ <span class="k">docs/</span> architecture · deploy · troubleshooting
+├─ Directory.Build.props · Directory.Packages.props
+└─ TeamsMsgs.sln · README.md · LICENSE</pre>
+      </div>
+      <p style="margin-top:10px">Helpers puros (<span class="mono">MessageValidator</span>, <span class="mono">SendWithRetry</span>, <span class="mono">ServiceBusMessageId</span>, <span class="mono">RedisTokenBucket.Step</span>, row-key builders) permitem <b>unit tests sem mocks pesados</b>.</p>
+    </div>
+  </section>
+
+  <!-- 23 · DEPLOY -->
+  <section class="slide" data-title="Deploy em Azure">
+    <div class="slide-inner">
+      <span class="eyebrow">Operação</span>
+      <h2>Deploy em Azure — passo a passo</h2>
+      <div class="grid g2">
+        <ol style="color:var(--muted);font-size:15px;line-height:1.7">
+          <li><b>App Registration</b> do bot (<span class="mono">az ad app create</span> + sp + credential)</li>
+          <li><b>Bicep</b>: <span class="mono">az deployment sub create</span> → RG, Storage, Service Bus, Managed Redis, Log, AKS, Bot</li>
+          <li><b>AcrPull</b>: módulo <span class="mono">acr-rbac.bicep</span> no RG do ACR compartilhado</li>
+          <li><b>AKS add-ons</b>: Istio ingress externo + Gateway API CRDs v1.2.0</li>
+          <li><b>cert-manager</b> via Helm (jetstack) + DNS label no Public IP</li>
+        </ol>
+        <ol start="6" style="color:var(--muted);font-size:15px;line-height:1.7">
+          <li>Aplica <span class="mono">Gateway / HTTPRoute / ClusterIssuer / Certificate</span></li>
+          <li><b>az acr build</b> das imagens (api + worker) no ACR compartilhado</li>
+          <li><b>values-poc.yaml</b>: preenche image registry/tags, bot, x-api-key e as 3 connection strings</li>
+          <li><b>Helm upgrade</b> cria ConfigMap, Secret, Deployments e KEDA <span class="mono">ScaledObject</span></li>
+          <li>Atualiza o <b>Messaging Endpoint</b> do Azure Bot para o FQDN</li>
+        </ol>
+      </div>
+      <pre class="code" style="margin-top:14px"><span class="k">helm</span> upgrade --install teams-msgs deploy/helm/teams-msgs -n teams-msgs --create-namespace &#92;
+  -f deploy/helm/teams-msgs/values.yaml -f deploy/helm/teams-msgs/values-poc.yaml</pre>
+      <p style="margin-top:8px"><b>Secret:</b> <span class="mono">Storage__ConnectionString</span>, <span class="mono">ServiceBus__ConnectionString</span> e <span class="mono">Redis__ConnectionString</span>. <b>Teams App:</b> <span class="mono">pwsh manifest/build.ps1</span> → upload no Admin Center → Setup policies (org-wide).</p>
+    </div>
+  </section>
+
+  <!-- 24 · TESTES & LOAD -->
+  <section class="slide" data-title="Testes & Load test">
+    <div class="slide-inner">
+      <span class="eyebrow">Qualidade &amp; Performance</span>
+      <h2>Testes e load test</h2>
+      <div class="grid g2">
+        <div class="card">
+          <h3>xUnit — 38 testes (0 falhas)</h3>
+          <table>
+            <thead><tr><th>Suíte</th><th>Cobertura</th></tr></thead>
+            <tbody>
+              <tr><td>MessageValidatorTests (10)</td><td>null, vazio, whitespace, AdaptiveCard, número, array</td></tr>
+              <tr><td>SendWithRetryTests (12)</td><td>200/429/403/410/400/500/transient/Retry-After + 2 cenários de cancelamento</td></tr>
+              <tr><td>RowKeyTests (3)</td><td>ToSafeRowKey (base64url) determinístico</td></tr>
+              <tr><td>MessageIdTests (4)</td><td>messageId determinístico do Service Bus</td></tr>
+              <tr><td>TokenBucketTests (4)</td><td>função pura do token bucket Redis</td></tr>
+              <tr><td>BotHttpStatusTests (5)</td><td>extração de status/Retry-After do Bot Framework</td></tr>
+            </tbody>
+          </table>
+          <pre class="code" style="margin-top:12px"><span class="k">dotnet</span> test
+<span class="c">Passed! Failed: 0, Passed: 38, Total: 38</span></pre>
+        </div>
+        <div>
+          <div class="grid g2">
+            <div class="card"><h3>Vazão</h3><div class="big">3.149</div><p>msg/min sustentados (~52,5/s)</p></div>
+            <div class="card"><h3>Scale</h3><div class="big">0→10→0</div><p>KEDA durante o teste 50k</p></div>
+          </div>
+          <div class="card" style="margin-top:18px">
+            <h3>Teste validado 50k</h3>
+            <p><b>50.000 refs</b> totalmente processadas com job <span class="mono">completed</span>. Enqueue ~60s; processamento ~953s (~16 min), no teto do rate limiter global de 50/s. O script <span class="mono">run-50k.js</span> semeia refs, dispara <span class="mono">/api/send</span>, faz polling e limpa ao final.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 25 · ENCERRAMENTO -->
+  <section class="slide" data-title="Encerramento">
+    <div class="slide-inner">
+      <span class="eyebrow">Resumo</span>
+      <h2>Por que essa arquitetura importa</h2>
+      <div class="grid g3">
+        <div class="card"><h3>Escala com Redis</h3><p>HINCRBY atômico elimina entidade quente; KEDA escala o worker 0→10 pela fila Service Bus.</p></div>
+        <div class="card"><h3>Resiliência</h3><p>Dedup nativa + DLQ do Service Bus, retry classificado e timeout curto no conector do Bot.</p></div>
+        <div class="card"><h3>Segurança</h3><p>Connection strings em Secret, TLS Let's Encrypt e x-api-key timing-safe.</p></div>
+        <div class="card"><h3>IaC reproduzível</h3><p>Bicep subscription-scope com 7 módulos; auth por connection string e AcrPull no ACR compartilhado.</p></div>
+        <div class="card"><h3>Canal certo</h3><p>Bot Framework proactive messaging — não burla rate limits, usa o canal nativo.</p></div>
+        <div class="card"><h3>Testável</h3><p>Helpers puros + 38 testes; load test de 50k validado no teto global de 50/s.</p></div>
+      </div>
+      <div class="note" style="margin-top:20px">
+        ⚠️ <b>Demo / prova de conceito.</b> Antes de produção, revise segurança, escalabilidade, observabilidade, custos e conformidade. Sem SLA. <b>Não afiliado nem endossado pela Microsoft</b> — marcas usadas apenas para descrição. Licença MIT.
+      </div>
+      <p class="footer-meta">📚 Detalhes: <span class="mono">README.md</span> · <span class="mono">docs/architecture.md</span> · <span class="mono">docs/deploy.md</span> · <span class="mono">docs/troubleshooting.md</span></p>
+    </div>
+  </section>
+
+  </div>
+</div>
+
+<!-- chrome -->
+<button class="menu-btn" id="menuBtn" title="Índice (M)">☰ Índice</button>
+<div class="nav">
+  <button id="prev" title="Anterior (←)">←</button>
+  <span class="count" id="count">1 / 25</span>
+  <button id="next" title="Próximo (→)">→</button>
+</div>
+<div class="hint" id="hint">← → navegar · M índice · F tela cheia</div>
+
+<div class="toc" id="toc">
+  <div class="toc-inner">
+    <span class="toc-close" id="tocClose">Fechar ✕</span>
+    <h2>Índice</h2>
+    <ol id="tocList"></ol>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  var track = document.getElementById('track');
+  var slides = Array.prototype.slice.call(track.querySelectorAll('.slide'));
+  var idx = 0;
+  var progress = document.getElementById('progress');
+  var count = document.getElementById('count');
+  var toc = document.getElementById('toc');
+  var tocList = document.getElementById('tocList');
+  var hint = document.getElementById('hint');
+
+  function render(){
+    track.style.transform = 'translateX(' + (-idx*100) + 'vw)';
+    progress.style.width = ((idx)/(slides.length-1)*100) + '%';
+    count.textContent = (idx+1) + ' / ' + slides.length;
+    if(location.hash !== '#'+(idx+1)) history.replaceState(null,'','#'+(idx+1));
+    slides[idx].scrollTop = 0;
+  }
+  function go(i){ idx = Math.max(0, Math.min(slides.length-1, i)); render(); }
+  function next(){ go(idx+1); }
+  function prev(){ go(idx-1); }
+
+  // TOC
+  slides.forEach(function(s,i){
+    var li = document.createElement('li');
+    li.textContent = s.getAttribute('data-title') || ('Slide '+(i+1));
+    li.addEventListener('click', function(){ go(i); closeToc(); });
+    tocList.appendChild(li);
+  });
+  function openToc(){ toc.classList.add('open'); }
+  function closeToc(){ toc.classList.remove('open'); }
+  document.getElementById('menuBtn').addEventListener('click', openToc);
+  document.getElementById('tocClose').addEventListener('click', closeToc);
+  toc.addEventListener('click', function(e){ if(e.target===toc) closeToc(); });
+
+  document.getElementById('next').addEventListener('click', next);
+  document.getElementById('prev').addEventListener('click', prev);
+
+  document.addEventListener('keydown', function(e){
+    if(toc.classList.contains('open')){ if(e.key==='Escape') closeToc(); return; }
+    switch(e.key){
+      case 'ArrowRight': case 'PageDown': case ' ': e.preventDefault(); next(); break;
+      case 'ArrowLeft': case 'PageUp': prev(); break;
+      case 'Home': go(0); break;
+      case 'End': go(slides.length-1); break;
+      case 'm': case 'M': openToc(); break;
+      case 'f': case 'F':
+        if(!document.fullscreenElement){ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen(); }
+        else { document.exitFullscreen&&document.exitFullscreen(); }
+        break;
+      case 'Escape': closeToc(); break;
+    }
+  });
+
+  // swipe (touch)
+  var x0=null;
+  track.addEventListener('touchstart', function(e){ x0 = e.changedTouches[0].clientX; }, {passive:true});
+  track.addEventListener('touchend', function(e){
+    if(x0===null) return; var dx = e.changedTouches[0].clientX - x0;
+    if(Math.abs(dx)>60){ dx<0?next():prev(); } x0=null;
+  }, {passive:true});
+
+  // deep link
+  function fromHash(){ var n = parseInt((location.hash||'').replace('#',''),10); if(!isNaN(n)) idx = Math.max(0,Math.min(slides.length-1,n-1)); }
+  fromHash();
+
+  // hide hint after a bit
+  setTimeout(function(){ if(hint) hint.style.opacity='0'; }, 6000);
+  hint && (hint.style.transition='opacity .8s');
+
+  // Mermaid: render once while slides have full width (flex row), then init deck.
+  function boot(){
+    if(window.mermaid){
+      try{
+        window.mermaid.initialize({
+          startOnLoad:false,
+          theme:'dark',
+          securityLevel:'loose',
+          flowchart:{ curve:'basis', htmlLabels:true, useMaxWidth:true },
+          sequence:{ useMaxWidth:true, wrap:true },
+          themeVariables:{
+            darkMode:true,
+            background:'#0a1020',
+            fontSize:'14px',
+            fontFamily:'Segoe UI, system-ui, sans-serif',
+            primaryColor:'#16224a',
+            primaryTextColor:'#e8eefc',
+            primaryBorderColor:'#2f9bff',
+            secondaryColor:'#241a4d',
+            secondaryTextColor:'#e8eefc',
+            tertiaryColor:'#0e1730',
+            tertiaryTextColor:'#cdd9f3',
+            lineColor:'#7e8fb5',
+            textColor:'#e8eefc',
+            mainBkg:'#16224a',
+            nodeBorder:'#2f9bff',
+            clusterBkg:'#0c142a',
+            clusterBorder:'#33446b',
+            edgeLabelBackground:'#0a1020',
+            noteBkgColor:'#23304f',
+            noteTextColor:'#e8eefc',
+            noteBorderColor:'#33446b',
+            actorBkg:'#16224a',
+            actorBorder:'#2f9bff',
+            actorTextColor:'#e8eefc',
+            actorLineColor:'#5b6f9c',
+            signalColor:'#aebbd8',
+            signalTextColor:'#dce7ff',
+            labelBoxBkgColor:'#16224a',
+            labelBoxBorderColor:'#33446b',
+            labelTextColor:'#e8eefc',
+            loopTextColor:'#e8eefc',
+            classText:'#e8eefc'
+          }
+        });
+        window.mermaid.run({ querySelector:'.mermaid' }).then(render).catch(function(err){
+          console.error('mermaid error', err); render();
+        });
+      }catch(err){ console.error(err); render(); }
+    } else {
+      // CDN falhou: mostra o source como código e segue.
+      document.querySelectorAll('.mermaid').forEach(function(el){
+        el.style.whiteSpace='pre'; el.style.fontFamily='monospace'; el.style.color='#9fb0d0'; el.style.fontSize='12px';
+      });
+      render();
+    }
+  }
+  if(document.readyState==='complete') boot();
+  else window.addEventListener('load', boot);
+  render();
+})();
+</script>
+</body>
+</html>
