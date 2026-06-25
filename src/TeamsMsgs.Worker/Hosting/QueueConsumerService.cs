@@ -111,8 +111,11 @@ public sealed class QueueConsumerService : BackgroundService
                     {
                         await ProcessAsync(message, stoppingToken).ConfigureAwait(false);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
                     {
+                        // Captura também TaskCanceledException de timeout HTTP (quando o
+                        // stoppingToken NÃO foi cancelado). Só um shutdown real propaga,
+                        // evitando que um timeout derrube o host inteiro.
                         _logger.LogError(ex, "Erro inesperado processando msg {MessageId}", message.MessageId);
                         try
                         {
@@ -130,7 +133,16 @@ public sealed class QueueConsumerService : BackgroundService
                 }, stoppingToken));
             }
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+            {
+                // Defesa em profundidade: nenhuma falha de processamento de um lote
+                // deve encerrar o BackgroundService (e com ele o host/pod).
+                _logger.LogError(ex, "Falha em lote de processamento; seguindo para o próximo poll.");
+            }
         }
 
         _logger.LogInformation("Worker encerrando.");

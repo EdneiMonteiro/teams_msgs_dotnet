@@ -43,8 +43,19 @@ builder.Services.AddSingleton<IRateLimiter>(sp =>
     return new RedisTokenBucket(sp.GetRequiredService<IRedisConnection>(), o.Key, o.Capacity, o.RatePerSec);
 });
 
-builder.Services.AddSingleton<BotFrameworkAuthentication>(_ =>
-    new ConfigurationBotFrameworkAuthentication(builder.Configuration));
+builder.Services.AddSingleton<BotFrameworkAuthentication>(sp =>
+{
+    // Conector com timeout curto (WorkerOptions.SendTimeout): evita que envios
+    // lentos prendam slots de concorrência por 100s (default do HttpClient).
+    var workerOptions = sp.GetRequiredService<IOptions<WorkerOptions>>().Value;
+    var httpClientFactory = new BotConnectorHttpClientFactory(workerOptions.SendTimeout);
+    return new ConfigurationBotFrameworkAuthentication(
+        builder.Configuration,
+        credentialsFactory: null,
+        authConfiguration: null,
+        httpClientFactory: httpClientFactory,
+        logger: sp.GetService<ILogger<ConfigurationBotFrameworkAuthentication>>());
+});
 builder.Services.AddSingleton<CloudAdapter>(sp => new CloudAdapter(
     sp.GetRequiredService<BotFrameworkAuthentication>(),
     sp.GetRequiredService<ILogger<CloudAdapter>>()));

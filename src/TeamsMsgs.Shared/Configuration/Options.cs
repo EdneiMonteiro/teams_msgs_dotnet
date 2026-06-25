@@ -82,4 +82,11 @@ public sealed class WorkerOptions
     public TimeSpan EmptyQueueBackoff { get; set; } = TimeSpan.FromSeconds(2);
 
     public TimeSpan MessageCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Timeout do HttpClient usado pelo conector do Bot Framework nos envios.
+    /// Curto de propósito: o default de 100s prende slots de concorrência quando
+    /// um destinatário "pendura" a requisição, colapsando a vazão em massa.
+    /// </summary>
+    public TimeSpan SendTimeout { get; set; } = TimeSpan.FromSeconds(20);
 }

@@ -2,7 +2,7 @@
 // See LICENSE and DISCLAIMER.md in the project root for details.
 //
 // Port do load_test/run-50k.js do repo teams_msgs (TS) para esta stack:
-//   .NET 8 + AKS + Storage Queue + Table Storage (Workload Identity)
+//   .NET 8 + AKS + Service Bus + Redis + Table Storage (connection strings)
 //
 // 1. Seed N fake refs no Table Storage 'conversationrefs' (clonando 1 ref real)
 //    — rowKey segue o mesmo formato que ConversationRefStore.ToSafeRowKey:
@@ -14,13 +14,13 @@
 // Variáveis de ambiente:
 //   BOT_URL                FQDN da API (default https://teams-msgs-dotnet.brazilsouth.cloudapp.azure.com)
 //   API_KEY                x-api-key da API
-//   STORAGE_ACCOUNT        nome da Storage Account (ex.: sttmdpocr4mzki)
-//   STORAGE_CONNECTION     OU connection string completa
+//   STORAGE_CONNECTION     connection string do Storage (recomendado nesta stack)
+//   STORAGE_ACCOUNT        OU nome da Storage Account (usa az login + DefaultAzureCredential)
 //
 // Uso (Windows PowerShell):
 //   $env:BOT_URL="https://teams-msgs-dotnet.brazilsouth.cloudapp.azure.com"
 //   $env:API_KEY="<sua-api-key>"
-//   $env:STORAGE_ACCOUNT="sttmdpocr4mzki"   # usa az CLI login (DefaultAzureCredential)
+//   $env:STORAGE_CONNECTION="<storage-connection-string>"
 //   node load_test/run-50k.js --refs 1000
 
 const { TableClient, AzureNamedKeyCredential } = require("@azure/data-tables");
@@ -158,7 +158,7 @@ async function main() {
   if (CLEANUP_ONLY) { await cleanupRefs(); return; }
 
   console.log("=".repeat(64));
-  console.log("  LOAD TEST — .NET 8 + AKS + Storage Queue + Workload Identity");
+  console.log("  LOAD TEST — .NET 8 + AKS + Service Bus + Redis + connection strings");
   console.log("=".repeat(64));
   console.log(`  URL:         ${BASE_URL}`);
   console.log(`  Target:      ${TARGET_REFS} refs`);
@@ -219,7 +219,7 @@ async function main() {
       const fs = require("fs");
       fs.writeFileSync(__dirname + "/report.json", JSON.stringify({
         timestamp: new Date().toISOString(),
-        stack: ".NET 8 + AKS + KEDA + Storage Queue + Workload Identity",
+        stack: ".NET 8 + AKS + KEDA + Service Bus + Redis + connection strings",
         config: { targetRefs: TARGET_REFS, actualRefs: j.total },
         results: {
           sent: j.sent, failed: j.failed,

@@ -46,8 +46,15 @@ public static class SendWithRetry
                 await send(ct).ConfigureAwait(false);
                 return SendOutcome.Success();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                // Cancelamento cooperativo real (shutdown do host) — propaga.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Inclui TaskCanceledException de timeout do HttpClient (ct NÃO cancelado):
+                // deve ser tratado como falha transitória de envio, não como shutdown.
                 var status = extractStatus(ex) ?? 0;
 
                 if (status == 429 && attempt < options.Retries)

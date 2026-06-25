@@ -206,4 +206,38 @@ public sealed class SendWithRetryTests
         outcome.Permanent.Should().BeFalse();
         outcome.ErrorMsg.Should().Be("network down");
     }
+
+    [Fact]
+    public async Task ExecuteAsync_HttpTimeoutCancellation_NotShutdown_IsTransient()
+    {
+        // TaskCanceledException de timeout do HttpClient deriva de OperationCanceledException,
+        // mas o token de envio NÃO está cancelado → deve ser tratado como transitória,
+        // não propagar (o que derrubaria o BackgroundService/host).
+        using var cts = new CancellationTokenSource();
+        var outcome = await SendWithRetry.ExecuteAsync(
+            _ => throw new TaskCanceledException("HttpClient timeout"),
+            _ => null,
+            options: NoSleep(),
+            ct: cts.Token);
+
+        outcome.Ok.Should().BeFalse();
+        outcome.Permanent.Should().BeFalse();
+        outcome.StatusCode.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShutdownCancellation_Rethrows()
+    {
+        // Cancelamento cooperativo real (token cancelado) deve propagar.
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = async () => await SendWithRetry.ExecuteAsync(
+            ct => Task.FromCanceled(ct),
+            _ => null,
+            options: NoSleep(),
+            ct: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 }

@@ -34,6 +34,23 @@ internal static class BotHttpStatus
             return (int)hre.StatusCode.Value;
         }
 
+        // Microsoft.Bot.Connector ErrorResponseException / Microsoft.Rest.HttpOperationException
+        // expõem o status HTTP em Response.StatusCode (HttpResponseMessageWrapper), não no topo.
+        var responseProp = ex.GetType().GetProperty("Response");
+        if (responseProp?.GetValue(ex) is { } response)
+        {
+            var respStatusProp = response.GetType().GetProperty("StatusCode");
+            var respValue = respStatusProp?.GetValue(response);
+            if (respValue is HttpStatusCode respHttp)
+            {
+                return (int)respHttp;
+            }
+            if (respValue is int respCode)
+            {
+                return respCode;
+            }
+        }
+
         return null;
     }
 

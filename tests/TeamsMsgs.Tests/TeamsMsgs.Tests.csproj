@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TeamsMsgs.Shared\TeamsMsgs.Shared.csproj" />
+    <ProjectReference Include="..\..\src\TeamsMsgs.Worker\TeamsMsgs.Worker.csproj" />
   </ItemGroup>
 
 </Project>

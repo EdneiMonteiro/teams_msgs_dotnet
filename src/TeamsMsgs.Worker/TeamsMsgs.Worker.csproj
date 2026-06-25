@@ -15,4 +15,8 @@
   <ItemGroup>
     <ProjectReference Include="..\TeamsMsgs.Shared\TeamsMsgs.Shared.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TeamsMsgs.Tests" />
+  </ItemGroup>
 </Project>
