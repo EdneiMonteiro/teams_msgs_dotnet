@@ -68,7 +68,7 @@ Reaplique com os outputs `@secure` do Bicep (`storageConnectionString`/`serviceB
 
 ### Redis indisponível → `/readyz` 503
 
-O `RedisConnection` usa `abortConnect=False`, mas se o host/porta/chave estiverem errados o ping falha. Confira o formato `({host}:6380,password=<key>,ssl=True,abortConnect=False)` e que o firewall do Azure Cache permite o egress do cluster.
+O `RedisConnection` usa `abortConnect=False`, mas se o host/porta/chave estiverem errados o ping falha. Confira o formato `({host}:10000,password=<key>,ssl=True,abortConnect=False)` (Azure Managed Redis usa a porta TLS 10000) e que o firewall do Azure Managed Redis permite o egress do cluster.
 
 ## Ingress / TLS
 

@@ -26,8 +26,8 @@ Port em **.NET 8** da demo [`teams_msgs`](https://github.com/EdneiMonteiro/teams
 | 🔒 Hardened auth | `x-api-key` com `CryptographicOperations.FixedTimeEquals` |
 | 🔑 Connection strings | Storage, Service Bus e Redis autenticam por connection string em K8s Secret (Workload Identity removido) |
 | 🛡️ HTTPS Let's Encrypt | cert-manager 1.20 + Gateway API + solver `gatewayHTTPRoute` (sem NGINX) |
-| 🧪 Testes | xUnit (26 testes) cobrindo validator, retry, idempotency, safe row key |
-| 🏗️ IaC | Bicep subscription-scope (AKS + Istio + KEDA + WI + Storage + Log Analytics + Bot); ACR compartilhado em RG externo |
+| 🧪 Testes | xUnit (38 testes) cobrindo validator, retry/cancelamento, status do Bot, message-id, token bucket, safe row key |
+| 🏗️ IaC | Bicep subscription-scope (AKS + Istio + KEDA + Storage + Service Bus + Redis + Log Analytics + Bot); ACR compartilhado em RG externo |
 | 🚢 Deploy | Helm chart com KEDA `ScaledObject` (`azure-servicebus`), HPA CPU para API |
 
 ---
@@ -54,7 +54,7 @@ Mesma lógica, componentes Azure diferentes:
 |---|---|---|
 | Runtime | Node 20 + TypeScript | **.NET 8 LTS** (ASP.NET Core Minimal API + Worker Service) |
 | Fila | Azure Service Bus (queue `send-messages`) | **Azure Service Bus** (Standard) |
-| Cache / counters / rate-limit | Azure Cache for Redis (HMSET + HINCRBY + Lua bucket) | **Azure Cache for Redis** (HMSET + HINCRBY + Lua bucket) |
+| Cache / counters / rate-limit | Azure Cache for Redis (HMSET + HINCRBY + Lua bucket) | **Azure Managed Redis** (HMSET + HINCRBY + Lua bucket) |
 | Compute | Azure Container Apps + KEDA | **AKS + KEDA azure-servicebus + HPA CPU** |
 | Ingress | (não tinha — ACA built-in) | **AKS managed Istio + Gateway API + cert-manager + Let's Encrypt** |
 | Auth aos serviços | Connection string | **Connection string** (Storage, Service Bus, Redis em K8s Secret) |
@@ -194,7 +194,7 @@ flowchart LR
 | cert-manager | jetstack/cert-manager v1.20.2 | — | Let's Encrypt automático via `gatewayHTTPRoute` solver |
 | Storage Account | `sttmd…` | Standard_LRS | Table `conversationrefs` (refs duráveis) |
 | Service Bus | `sb-tmd…` | Standard | Fila `send-messages` (dedup nativa + DLQ) |
-| Azure Cache for Redis | `redis-tmd…` | Basic C0 | Counters, índice de refs, cache de msg, token bucket |
+| Azure Managed Redis | `redis-tmd…` | Balanced_B0 | Counters, índice de refs, cache de msg, token bucket |
 | Container Registry | compartilhado (RG externo) | Basic | Imagens API + Worker (fora do RG da PoC) |
 | Log Analytics | `log-<seu-workspace>` | PerGB2018 (cap 25 MB/dia) | Container Insights do AKS |
 
@@ -520,7 +520,7 @@ teams_msgs_dotnet/
 │   │   └── modules/
 │   │       ├── storage.bicep         # Table conversationrefs
 │   │       ├── servicebus.bicep      # namespace Standard + fila (dedup + DLQ)
-│   │       ├── redis.bicep           # Azure Cache for Redis Basic C0
+│   │       ├── redis.bicep           # Azure Managed Redis Balanced_B0
 │   │       ├── acr-rbac.bicep        # AcrPull no ACR compartilhado (RG externo)
 │   │       ├── aks.bicep
 │   │       ├── loganalytics.bicep
@@ -569,18 +569,19 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 31, Skipped: 0, Total: 31, Duration: 25 ms
+Passed!  - Failed: 0, Passed: 38, Skipped: 0, Total: 38, Duration: 25 ms
 ```
 
 | Suíte | Cobertura |
 |---|---|
 | `MessageValidatorTests` (10) | null, string vazia, whitespace, AdaptiveCard válido/inválido, número, array |
-| `SendWithRetryTests` (10) | 200/429/403/410/400/500/transient/Retry-After header, retry-then-success |
+| `SendWithRetryTests` (12) | 200/429/403/410/400/500/transient/Retry-After, retry-then-success, e timeout (TaskCanceled) vs shutdown |
 | `RowKeyTests` (3) | `ToSafeRowKey` (base64url, determinístico) para o RowKey de `conversationrefs` |
 | `MessageIdTests` (4) | messageId determinístico do Service Bus `{jobId}:{md5(rowKey)}:{repeat}` (dedup nativa) |
 | `TokenBucketTests` (4) | função pura `BucketStep` do token bucket Redis (recarga, capacidade, consumo) |
+| `BotHttpStatusTests` (5) | extração do status HTTP do `ErrorResponseException` do Bot Framework (`Response.StatusCode`), incl. 400/403/timeout/desconhecido |
 
-Os helpers `MessageValidator`, `SendWithRetry`, `ServiceBusMessageId.Compute`, `RedisTokenBucket.Step` e `ConversationRefStore.ToSafeRowKey` foram **extraídos** para classes/funções puras, permitindo unit tests sem mocks pesados.
+Os helpers `MessageValidator`, `SendWithRetry`, `ServiceBusMessageId.Compute`, `RedisTokenBucket.Step`, `BotHttpStatus.ExtractStatus` e `ConversationRefStore.ToSafeRowKey` foram **extraídos** para classes/funções puras, permitindo unit tests sem mocks pesados.
 
 ---
 
@@ -657,12 +658,12 @@ kubectl apply -f deploy/clusterissuer-gw.yaml \
 
 # 7) Build das imagens no ACR compartilhado (resolve por nome, RG externo)
 ACR=<acr-compartilhado>
-az acr build -r $ACR --image teams-msgs/api:0.1.0 -f docker/Dockerfile.api .
-az acr build -r $ACR --image teams-msgs/worker:0.1.0 -f docker/Dockerfile.worker .
+az acr build -r $ACR --image teams-msgs/api:0.2.0 -f docker/Dockerfile.api .
+az acr build -r $ACR --image teams-msgs/worker:0.2.0 -f docker/Dockerfile.worker .
 
 # 8) Helm: cria values-poc.yaml a partir do template e dos outputs do Bicep
 cp deploy/helm/teams-msgs/values-poc.yaml.template deploy/helm/teams-msgs/values-poc.yaml
-# preencha: image.registry, workloadIdentity.uamiClientId, storage.*ServiceUri,
+# preencha: image.registry, storage/serviceBus/redis.connectionString (outputs @secure),
 #           bot.appId, bot.appPassword, api.apiKey
 
 helm upgrade --install teams-msgs deploy/helm/teams-msgs \
@@ -709,10 +710,10 @@ O script:
 
 > Para receber **N mensagens reais** no seu Teams (em vez de testar o pipeline), use `repeat: N` no `POST /api/send` em vez do teste de carga.
 
-Resultado de referência validado neste cluster:
-- **201 mensagens em 35 s** com 1 pod de worker = **354 msg/min**
-- KEDA escalou de 0 para 1 réplica em ~6 s
-- Vazão projetada para 50 mil mensagens com 10 workers: **~15 min** (~3500 msg/min agregado)
+Resultado validado neste cluster (teste de carga de 50.000 refs):
+- **50.001 mensagens processadas** (job `completed`) em **~16 min**
+- **3.149 msg/min (~52,5 msg/s)** sustentado — no teto do rate limiter global (50/s)
+- KEDA escalou o worker **0→10→0** conforme a profundidade da fila do Service Bus
 
 ---
 
