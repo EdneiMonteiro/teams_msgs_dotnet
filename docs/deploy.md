@@ -46,10 +46,18 @@ az deployment sub create \
 
 Outputs relevantes (`az deployment sub show -n <name> --query properties.outputs`):
 - `acrLoginServer`
-- `storageTableServiceUri`
-- `storageQueueServiceUri`
-- `uamiClientId`
+- `storageAccountName`
+- `serviceBusQueueName` — nome da fila (`send-messages`)
+- `redisHostName`
 - `aksName`
+
+Connection strings (marcadas `@secure` — **não commitar**; leia uma a uma):
+
+```bash
+az deployment sub show -n <name> --query properties.outputs.storageConnectionString.value -o tsv
+az deployment sub show -n <name> --query properties.outputs.serviceBusConnectionString.value -o tsv
+az deployment sub show -n <name> --query properties.outputs.redisConnectionString.value -o tsv
+```
 
 ## 3. Habilitar Istio managed ingress gateway
 
@@ -101,12 +109,12 @@ kubectl -n aks-istio-ingress get certificate teams-msgs-gw-tls
 
 ```bash
 ACR=<acr-compartilhado>
-# A tag deve casar com image.apiTag/workerTag do values-poc.yaml (o template já vem com 0.1.6).
+# A tag deve casar com image.apiTag/workerTag do values-poc.yaml (o template já vem com 0.2.0).
 az acr build --registry "$ACR" \
-  --image teams-msgs/api:0.1.6 --image teams-msgs/api:latest \
+  --image teams-msgs/api:0.2.0 --image teams-msgs/api:latest \
   --file docker/Dockerfile.api .
 az acr build --registry "$ACR" \
-  --image teams-msgs/worker:0.1.6 --image teams-msgs/worker:latest \
+  --image teams-msgs/worker:0.2.0 --image teams-msgs/worker:latest \
   --file docker/Dockerfile.worker .
 ```
 
@@ -118,12 +126,16 @@ cp deploy/helm/teams-msgs/values-poc.yaml.template deploy/helm/teams-msgs/values
 
 Edite com:
 - `image.registry`: `${ACR}.azurecr.io` (output do Bicep)
-- `image.apiTag`, `image.workerTag`: a tag que você buildou no passo 7 (template já vem com `0.1.6`)
-- `workloadIdentity.uamiClientId`: `uamiClientId` (output do Bicep)
-- `storage.tableServiceUri`, `storage.queueServiceUri`: outputs do Bicep
+- `image.apiTag`, `image.workerTag`: a tag que você buildou no passo 7 (template já vem com `0.2.0`)
+- `storage.connectionString`: output `@secure` `storageConnectionString`
+- `serviceBus.connectionString`: output `@secure` `serviceBusConnectionString`
+- `serviceBus.queueName`: output `serviceBusQueueName` (`send-messages`)
+- `redis.connectionString`: output `@secure` `redisConnectionString`
 - `bot.appId`, `bot.appPassword`: APP_ID e PWD do passo 1
 - `bot.tenantId`, `azure.tenantId`: seu tenant Entra
 - `api.apiKey`: string aleatória forte
+
+> As connection strings vão para o `Secret` do chart (`Storage__`/`ServiceBus__`/`Redis__ConnectionString`). O `values-poc.yaml` é **gitignored** — nunca commite as connection strings.
 
 ## 9. Deploy via Helm
 

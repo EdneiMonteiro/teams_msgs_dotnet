@@ -1,4 +1,4 @@
-# 📨 Teams Proactive Messaging — .NET 8 / AKS / Storage Queue
+# 📨 Teams Proactive Messaging — .NET 8 / AKS / Service Bus + Redis
 
 [![ORCID](https://img.shields.io/badge/ORCID-0009--0006--0765--4201-A6CE39?logo=orcid&logoColor=white)](https://orcid.org/0009-0006-0765-4201)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -7,7 +7,7 @@
 [![AKS](https://img.shields.io/badge/Compute-AKS-326CE5?logo=kubernetes&logoColor=white)](#)
 [![Last commit](https://img.shields.io/github/last-commit/EdneiMonteiro/teams_msgs_dotnet)](https://github.com/EdneiMonteiro/teams_msgs_dotnet/commits)
 
-Port em **.NET 8** da demo [`teams_msgs`](https://github.com/EdneiMonteiro/teams_msgs) (Node/TS), com substituição de componentes Azure: **Storage Queue** no lugar do Service Bus, **Table Storage** no lugar do Redis, **AKS** + **KEDA** + **Istio** no lugar do ACA. Mesma proposta: envio de mensagens proativas 1:1 em massa via Microsoft Teams (Bot Framework), respeitando rate limits.
+Port em **.NET 8** da demo [`teams_msgs`](https://github.com/EdneiMonteiro/teams_msgs) (Node/TS), mantendo os mesmos componentes Azure: **Azure Service Bus** (fila), **Redis** (counters, índice de refs, cache e rate limit) e **Table Storage** (refs duráveis). A diferença é o compute: **AKS** + **KEDA** + **Istio** no lugar do ACA. Mesma proposta: envio de mensagens proativas 1:1 em massa via Microsoft Teams (Bot Framework), respeitando rate limits.
 
 > ⚠️ Este repositório é uma **demo / prova de conceito**. Antes de usar em produção, revise: segurança, escalabilidade, observabilidade, custos e conformidade. Veja [DISCLAIMER.md](./DISCLAIMER.md) e [SUPPORT.md](./SUPPORT.md).
 
@@ -17,18 +17,18 @@ Port em **.NET 8** da demo [`teams_msgs`](https://github.com/EdneiMonteiro/teams
 
 | Capacidade | Como |
 |---|---|
-| 🚀 Fan-out assíncrono | Streaming generator das refs (Table Storage) + paralelismo controlado por `SemaphoreSlim` no enqueue da Storage Queue |
-| 🎯 Rate limit | **Istio EnvoyFilter local_ratelimit** no sidecar outbound do worker (token bucket no Envoy, por pod). Substitui o Lua bucket Redis do repo original |
+| 🚀 Fan-out assíncrono | Streaming generator das refs (Table Storage) + envio em **batches** do Service Bus no enqueue |
+| 🎯 Rate limit | **Token bucket Lua global no Redis** no hot path do worker (limite total entre todas as réplicas, como o repo original) |
 | 🎴 Adaptive Cards | `POST /api/send` aceita texto **ou** `{ type:"AdaptiveCard", content:<card> }` |
-| 🔁 Idempotência | Tabela `sentmarks` com insert-or-conflict — substitui a dedup nativa de `messageId` do Service Bus |
-| 📊 Counters sem Redis (sharded) | Contador do job dividido em **16 shards** (`jobId_sN`) no Table Storage, somados na leitura — elimina a contenção de `ETag` sob alta concorrência de workers |
-| 🩺 Health probes | `/healthz` (liveness) + `/readyz` (Storage Table + Storage Queue + Jobs table) |
+| 🔁 Idempotência | **Dedup nativa do Service Bus** (Standard) via `messageId` determinístico `{jobId}:{md5(rowKey)}:{repeat}` |
+| 📊 Counters em Redis | `HINCRBY` atômico no hash `job:{id}` (sent/failed/total), com cache do payload da mensagem e TTL 24h |
+| 🩺 Health probes | `/healthz` (liveness) + `/readyz` (Redis + Table Storage + Service Bus) |
 | 🔒 Hardened auth | `x-api-key` com `CryptographicOperations.FixedTimeEquals` |
-| 🔑 Sem connection strings | Workload Identity (federated credentials) em 3 SAs: `teams-msgs-api`, `teams-msgs-worker`, `kube-system:keda-operator` |
+| 🔑 Connection strings | Storage, Service Bus e Redis autenticam por connection string em K8s Secret (Workload Identity removido) |
 | 🛡️ HTTPS Let's Encrypt | cert-manager 1.20 + Gateway API + solver `gatewayHTTPRoute` (sem NGINX) |
 | 🧪 Testes | xUnit (26 testes) cobrindo validator, retry, idempotency, safe row key |
 | 🏗️ IaC | Bicep subscription-scope (AKS + Istio + KEDA + WI + Storage + Log Analytics + Bot); ACR compartilhado em RG externo |
-| 🚢 Deploy | Helm chart com KEDA `ScaledObject` (`azure-queue`), HPA CPU para API, EnvoyFilter para rate limit |
+| 🚢 Deploy | Helm chart com KEDA `ScaledObject` (`azure-servicebus`), HPA CPU para API |
 
 ---
 
@@ -53,14 +53,14 @@ Mesma lógica, componentes Azure diferentes:
 | Camada | `teams_msgs` (TS) | `teams_msgs_dotnet` |
 |---|---|---|
 | Runtime | Node 20 + TypeScript | **.NET 8 LTS** (ASP.NET Core Minimal API + Worker Service) |
-| Fila | Azure Service Bus (queue `send-messages`) | **Azure Storage Queue** |
-| Cache / counters / rate-limit | Azure Cache for Redis (HMSET + HINCRBY + Lua bucket) | **Table Storage (counter sharding) + Istio EnvoyFilter (local_ratelimit)** |
-| Compute | Azure Container Apps + KEDA | **AKS + KEDA azure-queue + HPA CPU** |
+| Fila | Azure Service Bus (queue `send-messages`) | **Azure Service Bus** (Standard) |
+| Cache / counters / rate-limit | Azure Cache for Redis (HMSET + HINCRBY + Lua bucket) | **Azure Cache for Redis** (HMSET + HINCRBY + Lua bucket) |
+| Compute | Azure Container Apps + KEDA | **AKS + KEDA azure-servicebus + HPA CPU** |
 | Ingress | (não tinha — ACA built-in) | **AKS managed Istio + Gateway API + cert-manager + Let's Encrypt** |
-| Auth ao Storage | Connection string | **Workload Identity** (federated credentials) |
-| Idempotência | `messageId` dedup do SB | Tabela `sentmarks` (insert-or-conflict) |
-| DLQ | SB DLQ automática | `send-messages-poison` (manual, após `DequeueCount > 5`) |
-| Limite por msg | 256 KB (SB) | **64 KB** (Storage Queue) — AdaptiveCards grandes fora do escopo |
+| Auth aos serviços | Connection string | **Connection string** (Storage, Service Bus, Redis em K8s Secret) |
+| Idempotência | `messageId` dedup do SB | **`messageId` dedup do SB** (Standard) |
+| DLQ | SB DLQ automática | **SB DLQ automática** (`maxDeliveryCount`) |
+| Limite por msg | 256 KB (SB) | **256 KB** (Service Bus Standard) |
 | IaC | (livre escolha) | Bicep subscription-scope |
 | CD | (livre escolha) | Helm chart + GitHub Actions OIDC (manual / `workflow_dispatch`) |
 
@@ -72,9 +72,9 @@ Mesma lógica, componentes Azure diferentes:
 - [Componentes Azure](#componentes-azure)
 - [Fluxo de funcionamento](#fluxo-de-funcionamento)
 - [Endpoints da API](#endpoints-da-api)
-- [Rate limit — Envoy local_ratelimit](#rate-limit--envoy-local_ratelimit)
+- [Rate limit — token bucket Redis](#rate-limit--token-bucket-redis)
 - [Idempotência sem dedup nativa](#idempotência-sem-dedup-nativa)
-- [Counters sem Redis (sharding)](#counters-sem-redis-sharding)
+- [Counters em Redis](#counters-em-redis)
 - [Segurança](#segurança)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Testes](#testes)
@@ -102,8 +102,7 @@ graph LR
         end
         subgraph "Namespace teams-msgs"
             API[teams-msgs-api<br/>Deployment<br/>HPA 1..5 CPU]
-            Worker[teams-msgs-worker<br/>Deployment<br/>KEDA 0..10 azure-queue]
-            EnvoyFilter[EnvoyFilter<br/>local_ratelimit<br/>token bucket]
+            Worker[teams-msgs-worker<br/>Deployment<br/>KEDA 0..10 azure-servicebus]
         end
         subgraph "Namespace cert-manager"
             CM[cert-manager<br/>gatewayHTTPRoute solver]
@@ -112,34 +111,29 @@ graph LR
 
     subgraph "Data plane"
         Refs[(Table Storage<br/>conversationrefs)]
-        Jobs[(Table Storage<br/>jobs<br/>16 shards)]
-        Marks[(Table Storage<br/>sentmarks<br/>idempotência)]
-        SQ[(Storage Queue<br/>send-messages)]
-        Poison[(Storage Queue<br/>send-messages-poison)]
+        RedisDB[(Redis<br/>counters · refs index<br/>cache · rate bucket)]
+        SB[(Service Bus<br/>send-messages)]
     end
 
     subgraph "Support / control plane"
         AzBot[Azure Bot<br/>bot-<seu-bot>]
         ACR[Container Registry<br/>compartilhado · RG externo]
         Logs[Log Analytics<br/>log-<seu-workspace><br/>25MB/dia cap]
-        UAMI[UAMI<br/>id-tmd-poc-app<br/>3 federated creds]
     end
 
     Client -->|POST /api/send<br/>x-api-key| Gateway
     Client -->|GET /api/jobs/:id| Gateway
     Gateway --> API
     API -->|streamRefs| Refs
-    API -->|AddEntity job| Jobs
-    API -->|SendMessageAsync<br/>parallel| SQ
-    SQ -->|KEDA scaler| Worker
-    Worker -->|GetMessage payload| Jobs
-    Worker -->|AddEntity claim| Marks
-    Worker -->|ContinueConversation| EnvoyFilter
-    EnvoyFilter -->|ratelimited| BF
+    API -->|createJob HMSET| RedisDB
+    API -->|SendMessageBatch| SB
+    SB -->|KEDA scaler| Worker
+    Worker -->|getMessage / counters| RedisDB
+    Worker -->|acquire token| RedisDB
+    Worker -->|ContinueConversation| BF
     BF -->|1:1| Users
-    Worker -->|incrementa shard| Jobs
     Worker -->|deleteEntity em 403/410| Refs
-    Worker -->|DequeueCount>5| Poison
+    Worker -->|Complete / DeadLetter| SB
 
     Users -.->|conversationUpdate| AzBot
     AzBot -.->|POST /api/messages| Gateway
@@ -150,40 +144,36 @@ graph LR
     ACR -.->|imagens| Worker
     API -.->|logs| Logs
     Worker -.->|logs| Logs
-    UAMI -.->|Workload Identity<br/>federated| API
-    UAMI -.->|Workload Identity<br/>federated| Worker
 ```
 
 **Princípios:**
 
-- **Table Storage = caminho quente E durabilidade**: counters via **sharding** (16 shards por job, somados na leitura), index ativo de refs (varredura por partition), payload da mensagem cacheado por job, **idempotência** via insert-or-conflict.
-- **Storage Queue = fan-out**: barata, simples, sem dedup nativa (compensada por `sentmarks`). Sem DLQ nativa (compensada por `send-messages-poison`). Limite de 64 KB por msg.
+- **Redis = caminho quente**: counters atômicos (`HINCRBY`), índice ativo de refs (`SCARD` para contagem O(1)), cache do payload da mensagem e token bucket global (rate limit Lua).
+- **Table Storage = durabilidade dos refs**: fonte da verdade dos `conversationReferences` (varredura por partition no fan-out). Idempotência é nativa do Service Bus.
+- **Service Bus = fan-out**: dedup nativa (`messageId`), DLQ automática (`maxDeliveryCount`), batches no enqueue. Limite de 256 KB por msg.
 - **Istio Gateway + cert-manager = entrada única**: HTTPS terminado pelo gateway com cert Let's Encrypt automático. Substitui NGINX Ingress completamente.
-- **AKS = compute**: API com `HPA` por CPU + Worker com `KEDA azure-queue` 0→10. Control plane Free tier; 2 nodes `Standard_D2s_v5`.
-- **Workload Identity = sem secrets**: cada SA federado ao mesmo UAMI; SDK Azure usa `DefaultAzureCredential` para autenticar no Storage data plane.
+- **AKS = compute**: API com `HPA` por CPU + Worker com `KEDA azure-servicebus` 0→10. Control plane Free tier; 2 nodes `Standard_D2ds_v5` (OS disk efêmero).
+- **Connection strings**: API e Worker autenticam em Storage, Service Bus e Redis via connection string montada de um K8s Secret.
 
 ### Detalhe — caminho de uma mensagem
 
 ```mermaid
 flowchart LR
     M1["/api/send<br/>POST"] --> M2["MessageValidator"]
-    M2 -->|"texto / card"| M3["TableJobTracker.CreateAsync<br/>AddEntity job (total=0)"]
+    M2 -->|"texto / card"| M3["RedisJobTracker.CreateAsync<br/>HMSET job (total=0)"]
     M3 --> M4["for each ref<br/>streamRefs Table"]
-    M4 --> M5["semaphoreSlim.Wait<br/>(concurrency=5)"]
-    M5 --> M6["queue.SendMessageAsync<br/>(JSON body)"]
+    M4 --> M5["buffer 500<br/>QueueMessageBody"]
+    M5 --> M6["EnqueueBatchAsync<br/>(Service Bus batch)"]
     M6 --> M7["UpdateTotalAsync<br/>(reconcilia total)"]
     M7 --> M8["KEDA escala worker<br/>0→10 réplicas"]
-    M8 --> M9["BackgroundService<br/>ReceiveMessages (batch≤32)"]
-    M9 --> M10["SentMarkStore.TryClaim<br/>AddEntity → 409=já enviado"]
-    M10 -->|claimed| M11["CloudAdapter.ContinueConversation"]
-    M10 -.->|409| M9
-    M11 --> M12["Envoy local_ratelimit<br/>token bucket"]
+    M8 --> M9["BackgroundService<br/>ReceiveMessages (PeekLock)"]
+    M9 --> M11["CloudAdapter.ContinueConversation"]
+    M11 --> M12["acquire token<br/>(token bucket Redis)"]
     M12 --> M13{"outcome"}
-    M13 -->|"200"| M14["IncrementSentAsync<br/>incrementa shard"]
+    M13 -->|"200"| M14["IncrementSentAsync<br/>HINCRBY + Complete"]
     M13 -->|"403/410"| M15["RemoveByRowKeyAsync<br/>IncrementFailedAsync"]
-    M13 -->|"429/5xx"| M11
+    M13 -->|"429/5xx"| M16["Abandon<br/>(broker reentrega → DLQ)"]
     style M3 fill:#FFE082,color:#000
-    style M10 fill:#A5D6A7,color:#000
     style M12 fill:#FFAB91,color:#000
     style M14 fill:#A5D6A7,color:#000
     style M15 fill:#EF9A9A,color:#000
@@ -198,14 +188,15 @@ flowchart LR
 | App Registration | associado ao Azure Bot | Free | Identidade do bot (SingleTenant) |
 | Azure Bot | `bot-<seu-bot>` | F0 | Registro Bot Framework + canal Teams |
 | AKS | `aks-<seu-cluster>` | Base / Free control plane | Cluster gerenciado; nodes `Standard_D2ds_v5` x2, OS disk efêmero |
-| AKS add-on KEDA | nativo do cluster | — | Escala worker pela profundidade da Storage Queue |
+| AKS add-on KEDA | nativo do cluster | — | Escala worker pela profundidade da fila do Service Bus |
 | AKS add-on Istio | `mesh enable` + `mesh enable-ingress-gateway` | — | Service mesh + Istio Gateway externo para ingress |
 | Gateway API CRDs | v1.2.0 | — | Padrão Kubernetes Gateway (substitui Ingress) |
 | cert-manager | jetstack/cert-manager v1.20.2 | — | Let's Encrypt automático via `gatewayHTTPRoute` solver |
-| Storage Account | `sttmd…` | Standard_LRS | Tables: `conversationrefs`, `jobs`, `sentmarks`. Queues: `send-messages`, `send-messages-poison` |
+| Storage Account | `sttmd…` | Standard_LRS | Table `conversationrefs` (refs duráveis) |
+| Service Bus | `sb-tmd…` | Standard | Fila `send-messages` (dedup nativa + DLQ) |
+| Azure Cache for Redis | `redis-tmd…` | Basic C0 | Counters, índice de refs, cache de msg, token bucket |
 | Container Registry | compartilhado (RG externo) | Basic | Imagens API + Worker (fora do RG da PoC) |
 | Log Analytics | `log-<seu-workspace>` | PerGB2018 (cap 25 MB/dia) | Container Insights do AKS |
-| User-Assigned MI | `id-tmd-poc-app` | — | UAMI federada a 3 SAs (api, worker, keda-operator) |
 
 ---
 
@@ -241,56 +232,47 @@ sequenceDiagram
     participant GW as Istio Gateway
     participant API as teams-msgs-api
     participant Refs as Table conversationrefs
-    participant Jobs as Table jobs (sharded)
-    participant Marks as Table sentmarks
-    participant SQ as Storage Queue
+    participant Redis as Redis (job + bucket)
+    participant SB as Service Bus
     participant Worker as Worker (KEDA 0→N)
-    participant Envoy as Envoy local_ratelimit
     participant Bot as Bot Framework
     participant User as 👤
 
     Client->>GW: POST /api/send (x-api-key)<br/>{message | AdaptiveCard, repeat?}
     GW->>API: HTTPS
     API->>API: MessageValidator.Validate()
-    API->>Jobs: AddEntity job (status=queued)
+    API->>Redis: HMSET job (status=queued)
     Note over API,Refs: IAsyncEnumerable streaming<br/>(não materializa array)
-    loop para cada ref (Table)
-        API->>SQ: SendMessageAsync (JSON body)<br/>SemaphoreSlim cap=5
+    loop buffer de 500 refs (Table)
+        API->>SB: EnqueueBatchAsync (ServiceBusMessageBatch)<br/>messageId determinístico
     end
-    API->>Jobs: UpdateTotalAsync (ETag)
-    API->>Jobs: SetStatusAsync("processing")
+    API->>Redis: UpdateTotal + status=processing
     API-->>GW: 202 {jobId, total, statusUrl}
     GW-->>Client: 202
 
-    Note over SQ,Worker: KEDA detecta queueLength<br/>→ escala 0..10
+    Note over SB,Worker: KEDA detecta msgCount<br/>→ escala 0..10
 
     par workers em paralelo
-        Worker->>SQ: ReceiveMessages (batch≤32, visibility=5min)
-        Worker->>Jobs: GetMessageAsync (cache local 5min)
-        Worker->>Marks: AddEntity (jobId, rowKey, repeat)
-        alt 409 Conflict
-            Worker->>SQ: DeleteMessage (idempotente, no-op)
-        else inserted
-            Worker->>Envoy: ContinueConversationAsync(ref, msg)
-            Envoy->>Envoy: token bucket check
-            Envoy->>Bot: HTTPS proxied
-            Bot->>User: mensagem 1:1
-            alt sucesso 200
-                Worker->>Jobs: IncrementSentAsync (incrementa shard)
-                Worker->>SQ: DeleteMessage
-            else 403/410
-                Worker->>Refs: DeleteEntity (rowKey)
-                Worker->>Jobs: IncrementFailedAsync
-                Worker->>SQ: DeleteMessage
-            else 429/5xx
-                Note over Worker: backoff e retry interno
-            end
+        Worker->>SB: ReceiveMessages (PeekLock)
+        Worker->>Redis: getMessage (cache local 5min)
+        Worker->>Redis: acquire token (bucket Lua)
+        Worker->>Bot: ContinueConversationAsync(ref, msg)
+        Bot->>User: mensagem 1:1
+        alt sucesso 200
+            Worker->>Redis: IncrementSent (HINCRBY)
+            Worker->>SB: Complete
+        else 403/410
+            Worker->>Refs: DeleteEntity (rowKey)
+            Worker->>Redis: IncrementFailed
+            Worker->>SB: Complete
+        else 429/5xx transiente
+            Worker->>SB: Abandon (reentrega → DLQ)
         end
     end
 
     Client->>GW: GET /api/jobs/:id
     GW->>API: HTTPS
-    API->>Jobs: GetEntity
+    API->>Redis: HGETALL job
     API-->>Client: {progress, sent, failed, status}
 ```
 
@@ -298,16 +280,14 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[Worker recebe msg da fila] --> AT{TryClaim<br/>sentmarks}
-    AT -->|409 já enviado| B[DeleteMessage<br/>no-op]
-    AT -->|ok| C{ContinueConversation<br/>+ Envoy rate limit}
-    C -->|✅ 200| D[IncrementSent<br/>DeleteMessage]
+    A[Worker recebe msg do Service Bus] --> C{ContinueConversation<br/>+ token bucket Redis}
+    C -->|✅ 200| D[IncrementSent<br/>Complete]
     C -->|⚠️ 429| E[Sleep Retry-After] --> C
     C -->|⚠️ 5xx| F[Backoff exponencial] --> C
-    C -->|❌ 403/410| G[Remove ref<br/>IncrementFailed<br/>DeleteMessage]
-    C -->|❌ 4xx outro| H[IncrementFailed<br/>DeleteMessage permanent]
-    C -->|❌ transiente<br/>após retries| I[NÃO deleta<br/>SQ redeliveryará]
-    AA[DequeueCount > 5] --> J[SendToPoisonAsync<br/>send-messages-poison]
+    C -->|❌ 403/410| G[Remove ref<br/>IncrementFailed<br/>Complete]
+    C -->|❌ 4xx outro| H[IncrementFailed<br/>Complete permanent]
+    C -->|❌ transiente<br/>após retries| I[Abandon<br/>broker reentrega]
+    I -->|DeliveryCount > max| J[DLQ nativa<br/>do Service Bus]
     style D fill:#A5D6A7,color:#000
     style G fill:#FFCC80,color:#000
     style H fill:#FFCC80,color:#000
@@ -322,11 +302,11 @@ flowchart TD
 | Método | Path | Auth | Descrição |
 |---|---|---|---|
 | POST | `/api/messages` | Bot Framework token (JWT) | Endpoint do Bot Framework (configure como Messaging Endpoint no Azure Bot) |
-| POST | `/api/send` | `x-api-key` | Enfileira N mensagens na Storage Queue e retorna `202 Accepted` |
+| POST | `/api/send` | `x-api-key` | Enfileira N mensagens no Service Bus (batches) e retorna `202 Accepted` |
 | GET | `/api/jobs/{id}` | `x-api-key` | Progresso do job (Table Storage) |
 | GET | `/api/status` | `x-api-key` | Contagem de usuários registrados |
 | GET | `/healthz` | — | Liveness simples |
-| GET | `/readyz` | — | Readiness (Table Storage + Storage Queue acessíveis via Workload Identity) |
+| GET | `/readyz` | — | Readiness (Redis + Table Storage + Service Bus acessíveis) |
 
 ### `POST /api/send`
 
@@ -419,90 +399,62 @@ HTTP/1.1 202 Accepted
 
 ---
 
-## Rate limit — Envoy local_ratelimit
+## Rate limit — token bucket Redis
 
-No repo original (TS), o rate-limit é um **token bucket Lua atômico no Redis**, global entre todas as réplicas. Aqui, ele saiu da app e foi para o **sidecar Envoy injetado pelo Istio**, via `EnvoyFilter`:
+Idêntico ao repo original: um **token bucket Lua atômico no Redis**, **global** entre todas as réplicas do worker (não por pod). O worker adquire 1 token antes de cada envio ao Bot Framework:
 
-```yaml
-# deploy/helm/teams-msgs/templates/envoyfilter-ratelimit.yaml
-spec:
-  workloadSelector:
-    labels:
-      app.kubernetes.io/component: worker
-  configPatches:
-    - applyTo: HTTP_FILTER
-      match:
-        context: SIDECAR_OUTBOUND
-      patch:
-        value:
-          name: envoy.filters.http.local_ratelimit
-          typed_config:
-            token_bucket:
-              max_tokens: 50
-              tokens_per_fill: 50
-              fill_interval: 1s
+```csharp
+// worker hot path, antes de ContinueConversationAsync:
+if (rateLimit.Enabled)
+    await rateLimiter.AcquireAsync(ct);   // bloqueia c/ backoff+jitter até obter token
 ```
 
-**Trade-off**: o token bucket é **por pod**. Limite global aproximado = `maxReplicaCount × tokensPerFill / fillInterval`.
+```lua
+-- RedisTokenBucket: refill por tempo decorrido, consome 1 token se disponível
+local elapsed = math.max(0, now_ms - last) / 1000.0
+tokens = math.min(capacity, tokens + elapsed * rate)
+if tokens >= 1 then tokens = tokens - 1; allowed = 1 end
+```
 
-Para rate limit verdadeiramente global cross-pod, seria preciso voltar a usar um backend compartilhado (Redis externo ou `RateLimitService` do Envoy). Para PoC, a aproximação por pod é aceita.
+Como todos os workers competem pela **mesma chave** (`ratelimit:bot`), o limite é o teto **total** de envios — independente de quantas réplicas o KEDA criou.
 
 | Parâmetro (values.yaml) | Default | Significado |
 |---|---:|---|
-| `worker.rateLimit.enabled` | `true` | Liga/desliga o EnvoyFilter |
-| `worker.rateLimit.maxTokens` | `50` | Burst máximo por pod |
-| `worker.rateLimit.tokensPerFill` | `50` | Tokens adicionados por intervalo |
-| `worker.rateLimit.fillInterval` | `1s` | Intervalo de refill |
+| `rateLimit.enabled` | `true` | Liga/desliga o token bucket |
+| `rateLimit.capacity` | `50` | Burst máximo (tokens) |
+| `rateLimit.ratePerSec` | `50` | Taxa sustentada (tokens/s) |
+| `rateLimit.key` | `ratelimit:bot` | Chave Redis do bucket |
 
 ---
 
-## Idempotência sem dedup nativa
+## Idempotência — dedup nativa do Service Bus
 
-O Service Bus do repo original tem `messageId` deduplication (quando configurado em Standard/Premium). A Storage Queue **não tem** equivalente. A substituição:
+O Service Bus (Standard) faz **deduplicação nativa** por `messageId`. O produtor gera um `messageId` determinístico, então reentregas/duplicatas dentro da janela de detecção são descartadas pelo broker:
 
 ```csharp
-// Antes do envio real ao Bot Framework:
-var claimed = await sentMarkStore.TryClaimAsync(jobId, refRowKey, repeatIndex, ct);
-if (!claimed) {
-    // 409 Conflict → outra réplica já entregou. Apenas remove da fila.
-    await receiver.CompleteAsync(message, ct);
-    return;
-}
-// Procede com ContinueConversationAsync...
+// ServiceBusMessageId.Compute:
+var messageId = $"{jobId}:{md5hex(rowKey)}:{repeatIndex}";
 ```
 
-Tabela `sentmarks`:
-- `PartitionKey` = `jobId`
-- `RowKey` = `{md5_hex(refRowKey)}_r{repeatIndex}` (estável e curto)
-- `AddEntity` falha com 409 se já existe → idempotência efetiva
-
-Vantagem: funciona com qualquer backend de fila (Storage Queue, Service Bus, RabbitMQ).
-Custo: 1 escrita extra em Table Storage por mensagem (~0,5 ms p50).
+A fila é criada com `requiresDuplicateDetection = true` e janela `PT10M` (Bicep). Não há tabela `sentmarks` nem escrita extra por mensagem — a idempotência fica a cargo do broker.
 
 ---
 
-## Counters sem Redis (sharding)
+## Counters em Redis
 
-No repo original, contadores de job (`sent`, `failed`, `total`) usavam `HINCRBY` do Redis — atômico e barato.
-
-Aqui, o contador é uma entidade **"quente"**: sob alta concorrência de workers KEDA, um registro único sofre forte contenção de `ETag` (`412 Precondition Failed`). Para escalar, `TableJobTracker` **distribui o contador em 16 shards** — `sent`/`failed` ficam em sub-entidades `jobId_s0..jobId_s15`. Cada incremento atualiza **um shard aleatório** (contenção ~16× menor) e a leitura (`GetAsync`) **soma os shards em paralelo**. O `status` (`completed`) é derivado on-read de `(Σsent + Σfailed) ≥ total`.
+Contadores de job (`sent`, `failed`, `total`) ficam num hash Redis `job:{id}`, com `HINCRBY` atômico — igual ao repo original:
 
 ```csharp
-// incremento: só um shard
-var rowKey = $"{jobId}_s{Random.Shared.Next(ShardCount)}";   // '_' — Table Storage proíbe '#' em RowKey
-await pipeline.ExecuteAsync(async token => {
-    try {
-        var e = (await table.GetEntityAsync<TableEntity>(pk, rowKey, ct: token)).Value;
-        e[field] = (e.GetInt64(field) ?? 0) + 1;
-        await table.UpdateEntityAsync(e, e.ETag, TableUpdateMode.Merge, token);
-    } catch (RequestFailedException ex) when (ex.Status == 404) {
-        await table.AddEntityAsync(new TableEntity(pk, rowKey) { [field] = 1L }, token);   // 1º incremento do shard
-    }
-});
-// leitura: GetAsync soma jobId_s0..s15 (Task.WhenAll) → sent/failed totais
+// incremento atômico
+var sent = await db.HashIncrementAsync($"job:{jobId}", "sent", 1);
+// status derivado: (sent + failed) >= total ? "completed" : "processing"
 ```
 
-**Histórico**: a 1ª versão fazia `read-modify-write` num registro único com retry de `ETag` (Polly). Resolvia a *correção*, mas a entidade quente limitava a *vazão* — o teste de 1.000 fechava 100%, mas o de 50 mil (10 workers) travava por contenção e mandava mensagens para a poison queue. O **sharding eliminou a contenção** (a antiga limitação acima de ~500 incrementos simultâneos no mesmo `jobId`).
+- `HMSET` na criação do job + `EXPIRE` 24h.
+- O **payload da mensagem** (texto/AdaptiveCard) também mora no hash → o worker resolve via Redis (com `IMemoryCache` local como L1).
+- O **índice de refs** (`refs:active`, `SCARD`) dá contagem O(1) para `/api/status` e o total do job.
+
+`HINCRBY` é atômico no servidor Redis, então não há contenção como num registro único de Table Storage — by design.
 
 ---
 
@@ -511,25 +463,17 @@ await pipeline.ExecuteAsync(async token => {
 - `POST /api/send`, `GET /api/jobs/{id}`, `GET /api/status` exigem header `x-api-key` quando `Api:ApiKey` está definida.
 - Comparação com `CryptographicOperations.FixedTimeEquals` (não vulnerável a timing attacks).
 - Em **dev local**, deixar `Api:ApiKey` vazia desliga a checagem (log de warning ao iniciar).
-- **Workload Identity** elimina connection strings: pods da api e worker autenticam no Storage data plane via `DefaultAzureCredential` → JWT federado emitido pelo Entra para o UAMI. O UAMI tem as roles `Storage Table Data Contributor` + `Storage Queue Data Contributor`.
+- **Connection strings**: API e Worker autenticam em Storage, Service Bus e Redis via connection string lida de um `Secret` do Kubernetes (Workload Identity removido).
 - **TLS terminado no Istio Gateway** com cert Let's Encrypt válido (auto-renew via cert-manager).
-- Secrets sensíveis (`Bot:AppPassword`, `Api:ApiKey`) ficam em `Secret` do Kubernetes; recomenda-se mover para Azure Key Vault + CSI driver em produção.
+- Secrets sensíveis (`Bot:AppPassword`, `Api:ApiKey`, connection strings) ficam em `Secret` do Kubernetes; recomenda-se mover para Azure Key Vault + CSI driver em produção.
 
 ### Roles RBAC criadas pelo Bicep
 
 | Identidade | Role | Scope |
 |---|---|---|
-| UAMI `id-tmd-poc-app` | Storage Table Data Contributor | Storage Account |
-| UAMI `id-tmd-poc-app` | Storage Queue Data Contributor | Storage Account |
-| AKS kubelet identity | AcrPull | ACR |
+| AKS kubelet identity | AcrPull | ACR compartilhado |
 
-### Federated identity credentials (UAMI ↔ SA do K8s)
-
-| Name | Subject | Para |
-|---|---|---|
-| `fed-api` | `system:serviceaccount:teams-msgs:teams-msgs-api` | Pod da API acessar Storage |
-| `fed-worker` | `system:serviceaccount:teams-msgs:teams-msgs-worker` | Pod do worker acessar Storage |
-| `fed-keda` | `system:serviceaccount:kube-system:keda-operator` | KEDA scaler ler queue length |
+> Sem RBAC de data plane: os serviços usam connection string. O único role assignment é o `AcrPull` do kubelet no ACR compartilhado (módulo `acr-rbac.bicep`).
 
 ---
 
@@ -547,40 +491,43 @@ teams_msgs_dotnet/
 │   ├── TeamsMsgs.Worker/             # Worker Service (BackgroundService)
 │   │   ├── Program.cs                # bootstrap
 │   │   └── Hosting/
-│   │       ├── QueueConsumerService.cs  # consome SQ → ContinueConversation
+│   │       ├── QueueConsumerService.cs  # consome Service Bus → ContinueConversation
 │   │       └── BotHttpStatus.cs         # extrai status + Retry-After
 │   └── TeamsMsgs.Shared/             # biblioteca compartilhada
 │       ├── Validation/MessageValidator.cs
 │       ├── Configuration/Options.cs
-│       ├── Azure/AzureClientFactory.cs  # TableClient/QueueClient com MI ou conn string
-│       ├── Storage/ConversationRefStore.cs
-│       ├── Jobs/TableJobTracker.cs   # sharded counters
-│       ├── Jobs/SentMarkStore.cs     # idempotência
-│       ├── Queueing/StorageSendQueue.cs
+│       ├── Azure/AzureClientFactory.cs  # TableClient via connection string
+│       ├── Redis/RedisConnection.cs     # ConnectionMultiplexer (StackExchange.Redis)
+│       ├── Storage/ConversationRefStore.cs  # Table + índice Redis (SCARD)
+│       ├── Jobs/RedisJobTracker.cs   # counters HINCRBY + cache de msg
+│       ├── Messaging/ServiceBusSendQueue.cs       # produtor (batches)
+│       ├── Messaging/ServiceBusSendQueueReceiver.cs  # consumidor (PeekLock + DLQ)
+│       ├── Messaging/ServiceBusMessageId.cs       # messageId determinístico
+│       ├── RateLimiting/RedisTokenBucket.cs       # token bucket Lua
 │       ├── Sending/SendWithRetry.cs
 │       └── Bot/ProactiveBot.cs
 ├── tests/
-│   └── TeamsMsgs.Tests/              # xUnit (26 testes)
-│       ├── MessageValidatorTests.cs  # 10 — validador (text/AdaptiveCard)
-│       ├── SendWithRetryTests.cs     # 10 — retry (429/5xx/403/410/4xx)
-│       └── RowKeyTests.cs            # 6 — safe row key, md5 sentmark key
+│   └── TeamsMsgs.Tests/              # xUnit (31 testes)
+│       ├── MessageValidatorTests.cs  # validador (text/AdaptiveCard)
+│       ├── SendWithRetryTests.cs     # retry (429/5xx/403/410/4xx)
+│       ├── TokenBucketTests.cs       # token bucket (função pura)
+│       ├── MessageIdTests.cs         # messageId determinístico
+│       └── RowKeyTests.cs            # safe row key
 ├── deploy/
 │   ├── bicep/
 │   │   ├── main.bicep                # orchestrator subscription-scope
 │   │   ├── main.bicepparam
 │   │   └── modules/
-│   │       ├── storage.bicep
+│   │       ├── storage.bicep         # Table conversationrefs
+│   │       ├── servicebus.bicep      # namespace Standard + fila (dedup + DLQ)
+│   │       ├── redis.bicep           # Azure Cache for Redis Basic C0
 │   │       ├── acr-rbac.bicep        # AcrPull no ACR compartilhado (RG externo)
 │   │       ├── aks.bicep
 │   │       ├── loganalytics.bicep
-│   │       ├── identity.bicep
-│   │       ├── federation.bicep
-│   │       ├── federation-keda.bicep
-│   │       ├── rbac.bicep
 │   │       └── bot.bicep
 │   ├── helm/teams-msgs/              # chart: api, worker, configmap, secret,
 │   │                                 # serviceaccount, scaledobject, hpa,
-│   │                                 # envoyfilter-ratelimit, namespace
+│   │                                 # namespace
 │   ├── istio-gateway.yaml            # Gateway + HTTPRoute (Gateway API)
 │   ├── clusterissuer-gw.yaml         # ClusterIssuer Let's Encrypt
 │   └── istio-cert.yaml               # Certificate request
@@ -622,16 +569,18 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 26, Skipped: 0, Total: 26, Duration: 25 ms
+Passed!  - Failed: 0, Passed: 31, Skipped: 0, Total: 31, Duration: 25 ms
 ```
 
 | Suíte | Cobertura |
 |---|---|
 | `MessageValidatorTests` (10) | null, string vazia, whitespace, AdaptiveCard válido/inválido, número, array |
 | `SendWithRetryTests` (10) | 200/429/403/410/400/500/transient/Retry-After header, retry-then-success |
-| `RowKeyTests` (6) | `ToSafeRowKey` (base64url, determinístico), `BuildRowKey` do SentMarkStore (md5 hex + suffix) |
+| `RowKeyTests` (3) | `ToSafeRowKey` (base64url, determinístico) para o RowKey de `conversationrefs` |
+| `MessageIdTests` (4) | messageId determinístico do Service Bus `{jobId}:{md5(rowKey)}:{repeat}` (dedup nativa) |
+| `TokenBucketTests` (4) | função pura `BucketStep` do token bucket Redis (recarga, capacidade, consumo) |
 
-Os helpers `MessageValidator`, `SendWithRetry`, `SentMarkStore.BuildRowKey` e `ConversationRefStore.ToSafeRowKey` foram **extraídos** para classes/funções puras, permitindo unit tests sem mocks pesados.
+Os helpers `MessageValidator`, `SendWithRetry`, `ServiceBusMessageId.Compute`, `RedisTokenBucket.Step` e `ConversationRefStore.ToSafeRowKey` foram **extraídos** para classes/funções puras, permitindo unit tests sem mocks pesados.
 
 ---
 
@@ -652,7 +601,7 @@ dotnet run --project src/TeamsMsgs.Api
 dotnet run --project src/TeamsMsgs.Worker
 ```
 
-`appsettings.json` aceita `Storage:ConnectionString` (dev) ou `Storage:TableServiceUri` + `Storage:QueueServiceUri` (prod com `DefaultAzureCredential` via `az login`).
+`appsettings.json` aceita connection strings em `Storage:ConnectionString`, `ServiceBus:ConnectionString` e `Redis:ConnectionString` (em dev, aponte para emuladores/instâncias locais; em prod, vêm do K8s Secret).
 
 Para expor o `/api/messages` ao Bot Framework em dev:
 ```bash
@@ -675,7 +624,7 @@ az ad sp create --id "$APP_ID"
 PWD=$(az ad app credential reset --id "$APP_ID" --append \
   --display-name "k8s" --years 1 --query password -o tsv)
 
-# 2) Bicep — cria RG + Storage + Log Analytics + UAMI + AKS + federations
+# 2) Bicep — cria RG + Storage + Service Bus + Redis + Log Analytics + AKS
 #     + Azure Bot (se botMsaAppId for fornecido); AcrPull no ACR compartilhado
 export SHARED_ACR_NAME=<acr-compartilhado>; export SHARED_ACR_RG=<rg-do-acr>
 az deployment sub create \
@@ -747,7 +696,7 @@ npm install
 
 $env:BOT_URL = "https://teams-msgs-dotnet.brazilsouth.cloudapp.azure.com"
 $env:API_KEY = "<api-key>"
-$env:STORAGE_ACCOUNT = "sttmd..."     # autentica via az login + DefaultAzureCredential
+$env:STORAGE_CONNECTION = "<storage-connection-string>"   # semeia refs na tabela conversationrefs
 node run-50k.js --refs 5000           # parâmetros válidos: --refs N, --skip-seed, --cleanup
 ```
 
@@ -774,17 +723,17 @@ Resultado de referência validado neste cluster:
 | `Authorization denied` no envio | Service Principal ausente no tenant alvo | `az ad sp create --id <app-id>` |
 | `401 Unauthorized` em `/api/send`, `/api/jobs`, `/api/status` | `x-api-key` faltando ou divergente | Veja `Api:ApiKey` na ConfigMap/Secret do Helm |
 | `401` em `/api/messages` (Bot Framework) | App Registration sem credencial OU `MicrosoftAppPassword` errado no Secret | Reseta com `az ad app credential reset` e atualiza `bot.appPassword` no `values-poc.yaml` |
-| `403 Forbidden AuthorizationPermissionMismatch` no Table Storage | Pod sem RBAC data plane | Bicep `rbac.bicep` deve atribuir `Storage Table Data Contributor` ao UAMI |
-| `AADSTS700213: No matching federated identity` no KEDA | Federated credential do `keda-operator` ausente | Aplicar `deploy/bicep/modules/federation-keda.bicep` |
+| `403 Forbidden` / auth no Storage, Service Bus ou Redis | Connection string ausente/errada no Secret | Cheque `Storage__ConnectionString`, `ServiceBus__ConnectionString`, `Redis__ConnectionString` no `values-poc.yaml` |
+| KEDA não escala o worker | `TriggerAuthentication` sem a connection string do Service Bus | Confira o secret key `ServiceBus__ConnectionString` referenciado no `scaledobject.yaml` |
 | Workers em `CrashLoopBackOff` com "No frameworks were found" | `Dockerfile.worker` usando `dotnet/runtime` em vez de `dotnet/aspnet` (Bot integration precisa do ASP.NET runtime) | Usar `mcr.microsoft.com/dotnet/aspnet:8.0-alpine` |
 | `Unable to activate type 'CloudAdapter'. Constructors are ambiguous` | DI sem factory explícita do CloudAdapter | Registrar via `sp => new CloudAdapter(sp.GetRequiredService<BotFrameworkAuthentication>(), …)` em vez de `AddSingleton<CloudAdapter>()` |
 | `504 Gateway Timeout` em `/api/send` com 50k+ refs | Timeout default 60s do ingress | `HTTPRoute.spec.rules[].timeouts.request: 600s` (já aplicado no chart) OU refatorar para BackgroundService + Channel |
 | Total = 0 em job grande | API cancelou o fan-out porque o cliente desconectou (504) | Mesmo fix do anterior. Em dev rápido: ignorar `RequestAborted` no `/api/send` handler |
-| `/readyz` retorna 503 | Storage Account inacessível ou Workload Identity sem role | Cheque o RBAC do UAMI e a federated credential `fed-api` |
+| `/readyz` retorna 503 | Redis, Storage ou Service Bus inacessível | Cheque as 3 connection strings no Secret e a conectividade |
 | `OverQuota` no Log Analytics | Daily cap atingido (configurado em 25 MB/dia) | Subir cap com `az monitor log-analytics workspace update --quota X` ou reduzir log level para `Warning` |
 | KEDA escala mas mensagens não somem da fila | Pod do worker em crash | `kubectl -n teams-msgs logs deployment/teams-msgs-worker --tail=50` |
 | `Bot Service: Agent.MessagesUrl must not be an IP address` | Bicep `bot.bicep` recebeu URL com IP cru | Configure DNS label no Public IP do Istio Gateway antes do deploy do módulo bot |
-| Job travado em `processing` indefinidamente | Mensagens em poison ou refs órfãs | `kubectl -n teams-msgs logs deployment/teams-msgs-worker` e/ou `az storage message peek -q send-messages-poison` |
+| Job travado em `processing` indefinidamente | Mensagens na DLQ ou refs órfãs | `kubectl -n teams-msgs logs deployment/teams-msgs-worker` e/ou inspecione a subfila `$DeadLetterQueue` do Service Bus |
 
 ---
 

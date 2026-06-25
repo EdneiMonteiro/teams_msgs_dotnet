@@ -49,23 +49,26 @@ az network public-ip update -g <MC_RG> -n <PIP_NAME> --dns-name teams-msgs-dotne
 az network public-ip update -g <MC_RG> -n <PIP_OLD> --remove dnsSettings
 ```
 
-## Runtime / Workload Identity
+## Runtime / Connection strings
 
-### `403 AuthorizationPermissionMismatch` no Table Storage
+### `401`/`403` ao acessar Storage, Service Bus ou Redis
 
-Pod autenticou OK no Entra (Workload Identity), mas o UAMI não tem RBAC data plane. Adicione `Storage Table Data Contributor` + `Storage Queue Data Contributor` no UAMI sobre o Storage Account.
+Com connection strings (Workload Identity foi removido), erros de auth quase sempre são connection string ausente ou errada no `Secret`. Verifique:
 
-### `AADSTS700213: No matching federated identity record found`
+```bash
+kubectl -n teams-msgs get secret teams-msgs-secrets -o jsonpath='{.data}' | \
+  jq 'keys'   # deve conter Storage__ConnectionString, ServiceBus__ConnectionString, Redis__ConnectionString
+```
 
-A SA do KEDA operator (`system:serviceaccount:kube-system:keda-operator`) precisa de federated credential própria no UAMI — não basta a da API/worker. Aplique o módulo `federation-keda.bicep`.
+- `Storage__ConnectionString` → `TableClient` (tabela `conversationrefs`)
+- `ServiceBus__ConnectionString` → `ServiceBusClient` (producer/consumer) **e** o `TriggerAuthentication` do KEDA
+- `Redis__ConnectionString` → `ConnectionMultiplexer` (counters/index/cache/bucket)
 
-Verifique também:
-- SA do pod anotado com `azure.workload.identity/client-id: <UAMI_CLIENT_ID>`
-- Pod marcado com o rótulo `azure.workload.identity/use: "true"`
+Reaplique com os outputs `@secure` do Bicep (`storageConnectionString`/`serviceBusConnectionString`/`redisConnectionString`) e `helm upgrade`.
 
-### `403 do meu user via az storage` mesmo sendo Owner da subscription
+### Redis indisponível → `/readyz` 503
 
-Owner cobre management plane, não data plane. Atribua explicitamente `Storage Table Data Contributor` / `Storage Queue Data Contributor` ao seu user.
+O `RedisConnection` usa `abortConnect=False`, mas se o host/porta/chave estiverem errados o ping falha. Confira o formato `({host}:6380,password=<key>,ssl=True,abortConnect=False)` e que o firewall do Azure Cache permite o egress do cluster.
 
 ## Ingress / TLS
 
@@ -101,7 +104,7 @@ spec:
 
 ### KEDA `READY=False  Reason=TriggerError`
 
-Quase sempre Workload Identity quebrada (ver acima). Logs do operator:
+Em geral é a connection string do Service Bus ausente/errada no `TriggerAuthentication` (o `scaledobject.yaml` referencia o secret key `ServiceBus__ConnectionString`). Logs do operator:
 ```bash
 kubectl -n kube-system logs deployment/keda-operator --tail=50
 ```
@@ -114,11 +117,11 @@ Mitigações: aumentar `worker.resources.limits.memory` para `1Gi` no `values.ya
 
 ### Mensagens não somem da fila apesar do worker rodar
 
-Provavelmente a msg está sendo lida + reentregue por causa de exception transient (Storage Queue redelivery). Após `DequeueCount > MaxDequeueCount` (default 5), nosso `QueueConsumerService.SendToPoisonAsync` move para `send-messages-poison`.
+Provavelmente a msg está sendo lida e reentregue por causa de exception transient (o worker faz `Abandon` no PeekLock). Após exceder `maxDeliveryCount` na fila do Service Bus, o broker move a mensagem para a **DLQ nativa** (`$DeadLetterQueue`) — não há poison queue manual.
 
 ```bash
-kubectl -n teams-msgs logs deployment/teams-msgs-worker --tail=100 | grep -i poison
-az storage message peek -q send-messages-poison --account-name <sa> --auth-mode login
+kubectl -n teams-msgs logs deployment/teams-msgs-worker --tail=100 | grep -iE 'abandon|deadletter'
+# inspecione a DLQ nativa da fila send-messages (subfila $DeadLetterQueue) via Service Bus Explorer no portal
 ```
 
 ## Logs / Custo
