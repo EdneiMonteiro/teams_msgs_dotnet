@@ -109,11 +109,17 @@ Em geral é a connection string do Service Bus ausente/errada no `TriggerAuthent
 kubectl -n kube-system logs deployment/keda-operator --tail=50
 ```
 
-### Worker pods reiniciando após processar lote grande de erros
+### Worker pods reiniciando (exit 0 / "Completed") sob carga
 
-Sintoma na PoC: 10 workers processando 30k+ msgs com `BadRequest` tiveram 3-4 restarts em 15min. Causas prováveis: OOM (limit padrão 512 MiB) e/ou exception não tratada no caminho do `ContinueConversationAsync` para refs inválidas.
+Sintoma na PoC: workers processando dezenas de milhares de msgs com `BadRequest` reiniciavam (`restartCount` crescente), **sem OOM** — `lastState.terminated.exitCode = 0`, `reason: Completed`, memória baixa (~60 MiB de 512). A causa NÃO é memória: era uma `TaskCanceledException` (timeout do `HttpClient`) que, por derivar de `OperationCanceledException`, escapava dos `catch` (que excluíam `OperationCanceledException`), faltava o `Task.WhenAll` e **encerrava o `BackgroundService`** — derrubando o pod (exit 0 → restart → perda de locks → reprocessamento).
 
-Mitigações: aumentar `worker.resources.limits.memory` para `1Gi` no `values.yaml` e revisar logs para classificar a exceção.
+Correção (já aplicada no código): só propagar o cancelamento quando `stoppingToken.IsCancellationRequested`; caso contrário, tratar como falha transitória. Ver `QueueConsumerService` e `SendWithRetry`.
+
+### Vazão colapsa (~0,4 msg/s) e o job nunca completa
+
+Dois sintomas correlatos, ambos corrigidos no código:
+1. **Classificação errada de status** — logs mostram `transitória: 0 ... 'BadRequest'. Abandon.` O status saía `0` porque o `ErrorResponseException` do Bot guarda o código em `Response.StatusCode`. `BotHttpStatus.ExtractStatus` agora lê esse campo → `400` vira permanente (Complete) em vez de `Abandon` infinito.
+2. **Sends lentos prendendo slots** — logs com `The request was canceled due to the configured HttpClient.Timeout of 100 seconds`. Cada envio lento prendia um slot de concorrência por 100s. `BotConnectorHttpClientFactory` aplica `Worker:SendTimeout` (default 20s); reduza-o ainda mais via `worker.sendTimeout` no `values.yaml` se necessário.
 
 ### Mensagens não somem da fila apesar do worker rodar
 

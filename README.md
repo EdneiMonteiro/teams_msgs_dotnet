@@ -295,6 +295,21 @@ flowchart TD
     style J fill:#EF9A9A,color:#000
 ```
 
+#### Confiabilidade do envio (worker)
+
+Três detalhes garantem que a vazão não colapse sob carga (validados no teste de 50k):
+
+- **Classificação de status correta** — o Bot Framework lança `ErrorResponseException`, que expõe o código HTTP em `Response.StatusCode` (não no topo). `BotHttpStatus.ExtractStatus` lê esse campo; sem isso, um `400` viraria status `0` → seria tratado como transitório → `Abandon` infinito.
+- **Timeout ≠ shutdown** — `TaskCanceledException` (timeout do HttpClient) deriva de `OperationCanceledException`. O worker só propaga o cancelamento quando o `stoppingToken` foi realmente cancelado (shutdown); um timeout vira falha transitória. Sem essa distinção, o timeout escapava dos `catch` e **derrubava o host** do worker (exit 0 → restart → perda de locks → reprocessamento).
+- **Timeout curto no conector** — `BotConnectorHttpClientFactory` injeta um `HttpClient` com `Worker:SendTimeout` (default **20s**) no conector do Bot. O default de 100s prenderia um slot de concorrência por mensagem lenta, estrangulando a vazão.
+
+| Parâmetro (values.yaml) | Default | Significado |
+|---|---:|---|
+| `worker.maxConcurrent` | `10` | Envios simultâneos por pod (SemaphoreSlim) |
+| `worker.pollBatchSize` | `32` | Mensagens por `ReceiveAsync` (PeekLock) |
+| `worker.sendTimeout` | `00:00:20` | Timeout do HttpClient do conector do Bot |
+| `worker.messageCacheTtl` | `00:05:00` | TTL do cache L1 (`IMemoryCache`) do payload |
+
 ---
 
 ## Endpoints da API
@@ -492,7 +507,8 @@ teams_msgs_dotnet/
 │   │   ├── Program.cs                # bootstrap
 │   │   └── Hosting/
 │   │       ├── QueueConsumerService.cs  # consome Service Bus → ContinueConversation
-│   │       └── BotHttpStatus.cs         # extrai status + Retry-After
+│   │       ├── BotHttpStatus.cs         # extrai status (Response.StatusCode) + Retry-After
+│   │       └── BotConnectorHttpClientFactory.cs  # HttpClient do conector c/ timeout curto
 │   └── TeamsMsgs.Shared/             # biblioteca compartilhada
 │       ├── Validation/MessageValidator.cs
 │       ├── Configuration/Options.cs
@@ -602,7 +618,7 @@ dotnet run --project src/TeamsMsgs.Api
 dotnet run --project src/TeamsMsgs.Worker
 ```
 
-`appsettings.json` aceita connection strings em `Storage:ConnectionString`, `ServiceBus:ConnectionString` e `Redis:ConnectionString` (em dev, aponte para emuladores/instâncias locais; em prod, vêm do K8s Secret).
+`appsettings.json` aceita connection strings em `Storage:ConnectionString`, `ServiceBus:ConnectionString` e `Redis:ConnectionString` (em dev, aponte para emuladores/instâncias locais; em prod, vêm do K8s Secret). Os parâmetros do worker (`Worker:MaxConcurrent`, `Worker:PollBatchSize`, `Worker:SendTimeout`, etc.) também vêm de `appsettings.json` ou da ConfigMap (`Worker__*`) no cluster.
 
 Para expor o `/api/messages` ao Bot Framework em dev:
 ```bash

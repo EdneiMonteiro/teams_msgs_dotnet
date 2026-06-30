@@ -25,3 +25,4 @@ data:
   Worker__VisibilityTimeout: {{ .Values.worker.visibilityTimeout | quote }}
   Worker__EmptyQueueBackoff: {{ .Values.worker.emptyQueueBackoff | quote }}
   Worker__MessageCacheTtl: {{ .Values.worker.messageCacheTtl | quote }}
+  Worker__SendTimeout: {{ .Values.worker.sendTimeout | quote }}
