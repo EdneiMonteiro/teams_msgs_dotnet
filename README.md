@@ -759,3 +759,8 @@ Resultado validado neste cluster (teste de carga de 50.000 refs):
 - Sem SLA nem suporte oficial. Veja [SUPPORT.md](./SUPPORT.md).
 - Uso sujeito a [DISCLAIMER.md](./DISCLAIMER.md).
 - **Não afiliado nem endossado pela Microsoft.** Marcas usadas apenas para descrição.
+
+## 🤝 Contributing
+
+Issue and pull request creation is restricted to collaborators. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for details.
